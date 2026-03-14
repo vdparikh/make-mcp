@@ -72,6 +72,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		{
 			servers.GET("", h.ListServers)
 			servers.POST("", h.CreateServer)
+			servers.POST("/demo", h.CreateDemoServer)
 			servers.GET("/:id", h.GetServer)
 			servers.PUT("/:id", h.UpdateServer)
 			servers.DELETE("/:id", h.DeleteServer)
@@ -259,6 +260,20 @@ func (h *Handler) CreateServer(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusCreated, server)
+}
+
+func (h *Handler) CreateDemoServer(c *gin.Context) {
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	server, err := h.db.CreateDemoServerForUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusCreated, server)
 }
 

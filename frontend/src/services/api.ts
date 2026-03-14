@@ -157,6 +157,11 @@ export const createServer = async (server: Partial<Server>): Promise<Server> => 
   return data;
 };
 
+export const createDemoServer = async (): Promise<Server> => {
+  const { data } = await api.post<Server>('/servers/demo');
+  return data;
+};
+
 export const updateServer = async (id: string, server: Partial<Server>): Promise<Server> => {
   const { data } = await api.put<Server>(`/servers/${id}`, server);
   return data;

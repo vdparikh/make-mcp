@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vdparikh/make-mcp/backend/internal/models"
 )
 
 // nullUUID returns nil for empty string so NULL can be stored in UUID columns.
@@ -21,6 +22,44 @@ func nullUUID(s string) *string {
 // First user registers with email + name, then adds a passkey via WebAuthn.
 func (db *DB) SeedDemoData(ctx context.Context) error {
 	return nil
+}
+
+// CreateDemoServerForUser creates the Demo API Toolkit server with tools, resources, prompts, and context configs for the given owner.
+func (db *DB) CreateDemoServerForUser(ctx context.Context, ownerID string) (*models.Server, error) {
+	serverID := uuid.New().String()
+	now := time.Now()
+
+	_, err := db.pool.Exec(ctx, `
+		INSERT INTO servers (id, name, description, version, icon, status, owner_id, is_public, downloads, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, serverID,
+		"Demo API Toolkit",
+		"A fully functional demo MCP server showcasing location lookup, weather info, and utility tools. Use this as a model for building your own servers.",
+		"1.0.0",
+		"bi-server",
+		"draft",
+		ownerID,
+		false,
+		0,
+		now, now)
+	if err != nil {
+		return nil, fmt.Errorf("creating demo server: %w", err)
+	}
+
+	if err := db.seedDemoTools(ctx, serverID, now); err != nil {
+		return nil, fmt.Errorf("seeding demo tools: %w", err)
+	}
+	if err := db.seedDemoResources(ctx, serverID, now); err != nil {
+		return nil, fmt.Errorf("seeding demo resources: %w", err)
+	}
+	if err := db.seedDemoPrompts(ctx, serverID, now); err != nil {
+		return nil, fmt.Errorf("seeding demo prompts: %w", err)
+	}
+	if err := db.seedDemoContextConfigs(ctx, serverID, now); err != nil {
+		return nil, fmt.Errorf("seeding demo context configs: %w", err)
+	}
+
+	return db.GetServer(ctx, serverID)
 }
 
 func (db *DB) seedDemoTools(ctx context.Context, serverID string, now time.Time) error {
@@ -149,8 +188,13 @@ func (db *DB) seedDemoTools(ctx context.Context, serverID string, now time.Time)
 			description:   "Get a random programming joke or dad joke. Great for lightening the mood!",
 			executionType: "rest_api",
 			inputSchema: map[string]interface{}{
-				"type":       "object",
-				"properties": map[string]interface{}{},
+				"type": "object",
+				"properties": map[string]interface{}{
+					"limit": map[string]interface{}{
+						"type":        "string",
+						"description": "Optional; unused for single joke.",
+					},
+				},
 			},
 			outputSchema: map[string]interface{}{
 				"type": "object",
@@ -307,8 +351,8 @@ func (db *DB) seedDemoTools(ctx context.Context, serverID string, now time.Time)
 		executionConfigJSON, _ := json.Marshal(tool.executionConfig)
 
 		_, err := db.pool.Exec(ctx, `
-			INSERT INTO tools (id, server_id, name, description, input_schema, output_schema, execution_type, execution_config, context_fields, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			INSERT INTO tools (id, server_id, name, description, input_schema, output_schema, execution_type, execution_config, context_fields, read_only_hint, destructive_hint, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, false, $10, $11)
 		`, toolID, serverID, tool.name, tool.description, inputSchemaJSON, outputSchemaJSON, tool.executionType, executionConfigJSON, tool.contextFields, now, now)
 
 		if err != nil {
