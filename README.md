@@ -1,4 +1,4 @@
-# MCP Server Builder
+# Make MCP
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
@@ -15,18 +15,13 @@
   Create plug-and-play MCP servers for AI agents, IDEs like Cursor, and platforms like Claude Desktop through an intuitive UI.
 </p>
 
-<div align="center">
-  <img src="/docs/image_1.png" width="30%" />
-  <img src="/docs/image_2.png" width="30%" />
-  <img src="/docs/image_3.png" width="30%" />
-</div>
 
 ---
 
 ## Features
 
 - **Visual Server Builder** — Create MCP servers through a drag-and-drop interface
-- **Multiple Execution Types** — REST API, GraphQL, Webhooks, Database queries
+- **Multiple Execution Types** — REST API, GraphQL, Webhooks, CLI (kubectl, docker, terraform), Database, JavaScript, Python, and Visual Flow (pipeline → tool)
 - **Built-in Authentication** — API Key, Bearer Token, Basic Auth, OAuth 2.0 with visual configuration
 - **Live Testing Playground** — Test tools before deployment
 - **One-Click Export** — Download as Node.js project, ready to run
@@ -34,6 +29,7 @@
 - **AI Governance Layer** — Policy engine to control tool access (rate limits, roles, approvals)
 - **Self-Healing Tools** — Auto-detect failures and suggest fixes
 - **Server Composition** — Combine multiple MCP servers into one
+- **Security Score** — In-app score (0–100%, grade A–F) based on the [SlowMist MCP Security Checklist](https://github.com/slowmist/MCP-Security-Checklist); shown while building and in the marketplace
 
 ## Quick Start
 
@@ -51,7 +47,7 @@ cd make-mcp
 docker-compose up --build
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000. **Log in** with the default user **demo@example.com** / **demo123** (created on first run).
 
 ### Manual Setup
 
@@ -75,11 +71,11 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000 and log in with **demo@example.com** / **demo123** (created on first run).
 
 ## Demo Server
 
-On first startup, a **Demo API Toolkit** is automatically created with 8 working tools:
+On first startup, a default user and a **Demo API Toolkit** server are created (for that user) with 8 working tools:
 
 | Tool | Description |
 |------|-------------|
@@ -96,29 +92,25 @@ On first startup, a **Demo API Toolkit** is automatically created with 8 working
 
 ### Dashboard
 Create and manage your MCP servers in one place.
+![Image 1](docs/images/image_1.png) 
 
 ### Tool Builder
-Visual schema editor with multiple execution types.
+Visual schema editor with execution types: REST, GraphQL, CLI, Flow, Database, and more.
+![Image 1](docs/images/image_2.png) 
 
 ### Testing Playground
 Test tools with mock input before deployment.
+![Image 1](docs/images/image_3.png) 
+
+### Security Score
+![Image 5](docs/images/image_5.png) 
+
+### Download and Deploy
+![Image 1](docs/images/image_4.png) 
 
 ### Governance Policies
 Define rules to control AI tool access.
 
-## Architecture
-
-```
-┌─────────────────────┐     ┌─────────────────────┐
-│   React Frontend    │────▶│    Go Backend API   │
-│   (Port 3000)       │     │    (Port 8080)      │
-└─────────────────────┘     └──────────┬──────────┘
-                                       │
-                            ┌──────────▼──────────┐
-                            │     PostgreSQL      │
-                            │    (Port 5432)      │
-                            └─────────────────────┘
-```
 
 ## 3 Powerful Features
 
@@ -188,7 +180,10 @@ Add to your MCP client config:
 
 ## Documentation
 
-- [Getting Started Guide](./getting_started.md) — Full setup and usage guide
+- [Getting Started Guide](./docs/getting-started.md) — Full setup and usage guide
+- [Creating Servers](./docs/creating-servers.md) — Detailed guide to building MCP servers
+- [Server Compositions](./docs/compositions.md) — Combining multiple servers into one
+- [Security Best Practices](./docs/security-best-practices.md) — MCP security practices and the in-app security score
 
 ## Tech Stack
 

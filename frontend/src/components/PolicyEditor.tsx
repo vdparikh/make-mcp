@@ -151,10 +151,10 @@ export default function PolicyEditor({ tools, onPolicyUpdated }: Props) {
             <i className="bi bi-shield-exclamation" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
             Example: Payment Protection
           </h4>
-          <code style={{ fontSize: '0.8125rem', color: '#a5f3fc', display: 'block', marginBottom: '0.5rem', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: '4px' }}>
+          <code style={{ fontSize: '0.8125rem', color: '#a5f3fc', display: 'block', marginBottom: '0.5rem', background: 'rgb(0,0,0)', padding: '0.5rem', borderRadius: '4px' }}>
             AI requests: send_payment($50,000)
           </code>
-          <code style={{ fontSize: '0.8125rem', color: '#fca5a5', display: 'block', background: 'rgba(0,0,0,0.3)', padding: '0.5rem', borderRadius: '4px' }}>
+          <code style={{ fontSize: '0.8125rem', color: '#fca5a5', display: 'block', background: 'rgb(0,0,0)', padding: '0.5rem', borderRadius: '4px' }}>
             Policy Engine: DENIED - Exceeds max_amount of $5,000
           </code>
         </div>
@@ -333,33 +333,51 @@ export default function PolicyEditor({ tools, onPolicyUpdated }: Props) {
         ) : (
           <div>
             {policies.map((policy) => (
-              <div key={policy.id} className="card" style={{ background: 'var(--dark-bg)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h4 style={{ margin: 0, marginBottom: '0.25rem' }}>{policy.name}</h4>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>
-                      {policy.description || 'No description'}
-                    </p>
+              <div key={policy.id} className="tool-card">
+                <div className="tool-icon" style={{ background: '#6366f1', color: 'white' }}>
+                  <i className="bi bi-shield-fill-check"></i>
+                </div>
+                <div className="tool-info">
+                  <div className="tool-name">{policy.name}</div>
+                  <div className="tool-description">
+                    {policy.description || 'No description'}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                     <span className={`badge ${policy.enabled ? 'badge-success' : 'badge-warning'}`}>
                       {policy.enabled ? 'Enabled' : 'Disabled'}
                     </span>
-                    <button 
-                      className="btn btn-icon btn-secondary btn-sm"
-                      onClick={() => handleDeletePolicy(policy.id)}
-                    >
-                      <i className="bi bi-trash"></i>
-                    </button>
+                    {policy.rules?.map((rule, i) => (
+                      <span key={i} className="badge badge-primary">
+                        <i className={`bi ${ruleTypes.find(t => t.value === rule.type)?.icon}`} style={{ marginRight: '0.25rem' }}></i>
+                        {ruleTypes.find(t => t.value === rule.type)?.label}
+                      </span>
+                    ))}
                   </div>
                 </div>
-                <div className="policy-rules" style={{ marginTop: '1rem' }}>
-                  {policy.rules?.map((rule, i) => (
-                    <span key={i} className="badge badge-primary">
-                      <i className={`bi ${ruleTypes.find(t => t.value === rule.type)?.icon}`} style={{ marginRight: '0.25rem' }}></i>
-                      {ruleTypes.find(t => t.value === rule.type)?.label}
-                    </span>
-                  ))}
+                <div className="tool-actions">
+                  <button 
+                    className="btn btn-icon btn-secondary btn-sm"
+                    onClick={() => {
+                      setPolicyName(policy.name);
+                      setPolicyDescription(policy.description || '');
+                      setRules(policy.rules?.map(r => ({
+                        type: r.type,
+                        config: JSON.stringify(r.config || {}, null, 2),
+                        failAction: r.fail_action || 'deny'
+                      })) || []);
+                      setShowForm(true);
+                    }}
+                    data-tooltip="Edit"
+                  >
+                    <i className="bi bi-pencil"></i>
+                  </button>
+                  <button 
+                    className="btn btn-icon btn-secondary btn-sm"
+                    onClick={() => handleDeletePolicy(policy.id)}
+                    data-tooltip="Delete"
+                  >
+                    <i className="bi bi-trash"></i>
+                  </button>
                 </div>
               </div>
             ))}

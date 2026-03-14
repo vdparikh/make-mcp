@@ -8,7 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vdparikh/make-mcp/backend/internal/auth"
 )
+
+// nullUUID returns nil for empty string so NULL can be stored in UUID columns.
+func nullUUID(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
 
 // SeedDemoData creates initial demo data if the database is empty
 func (db *DB) SeedDemoData(ctx context.Context) error {
@@ -25,15 +34,36 @@ func (db *DB) SeedDemoData(ctx context.Context) error {
 	}
 
 	log.Println("Seeding demo data...")
-
-	// Create demo server
-	serverID := uuid.New().String()
 	now := time.Now()
 
+	// Ensure a default user exists so the demo server can be owned
+	var defaultUserID string
+	var userCount int
+	if err := db.pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&userCount); err != nil {
+		return fmt.Errorf("checking users: %w", err)
+	}
+	if userCount == 0 {
+		defaultUserID = uuid.New().String()
+		hash, err := auth.HashPassword("demo123")
+		if err != nil {
+			return fmt.Errorf("hashing default password: %w", err)
+		}
+		_, err = db.pool.Exec(ctx, `
+			INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, defaultUserID, "demo@example.com", "Demo User", hash, now, now)
+		if err != nil {
+			return fmt.Errorf("creating default user: %w", err)
+		}
+		log.Println("Created default user: demo@example.com / demo123")
+	}
+
+	// Create demo server (owned by default user if we just created one)
+	serverID := uuid.New().String()
 	_, err = db.pool.Exec(ctx, `
-		INSERT INTO servers (id, name, description, version, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, serverID, "Demo API Toolkit", "A fully functional demo MCP server showcasing location lookup, weather info, and utility tools. Use this as a model for building your own servers.", "1.0.0", now, now)
+		INSERT INTO servers (id, name, description, version, owner_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, serverID, "Demo API Toolkit", "A fully functional demo MCP server showcasing location lookup, weather info, and utility tools. Use this as a model for building your own servers.", "1.0.0", nullUUID(defaultUserID), now, now)
 
 	if err != nil {
 		return fmt.Errorf("creating demo server: %w", err)

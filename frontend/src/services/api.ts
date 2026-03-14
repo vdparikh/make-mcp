@@ -11,6 +11,9 @@ import type {
   ServerComposition,
   TestToolResponse,
   PolicyEvaluationResult,
+  ServerVersion,
+  PublishRequest,
+  SecurityScoreResult,
 } from '../types';
 
 const api = axios.create({
@@ -20,10 +23,71 @@ const api = axios.create({
   },
 });
 
-// Server APIs
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle 401 responses - but not for auth endpoints
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const isAuthEndpoint = error.config?.url?.startsWith('/auth/');
+    const isOnLoginPage = window.location.pathname === '/login' || window.location.pathname === '/register';
+    
+    if (error.response?.status === 401 && !isAuthEndpoint && !isOnLoginPage) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth types
+interface AuthResponse {
+  token: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    created_at: string;
+  };
+}
+
+interface UserResponse {
+  id: string;
+  email: string;
+  name: string;
+  created_at: string;
+}
+
+// Auth APIs
+export const login = async (email: string, password: string): Promise<AuthResponse> => {
+  const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+  return data;
+};
+
+export const register = async (email: string, name: string, password: string): Promise<AuthResponse> => {
+  const { data } = await api.post<AuthResponse>('/auth/register', { email, name, password });
+  return data;
+};
+
+export const getCurrentUser = async (): Promise<UserResponse> => {
+  const { data } = await api.get<UserResponse>('/auth/me');
+  return data;
+};
+
+// Server APIs (no cache so list is always fresh for current user)
 export const listServers = async (): Promise<Server[]> => {
-  const { data } = await api.get<Server[]>('/servers');
-  return data || [];
+  const { data } = await api.get<Server[]>('/servers', {
+    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+    params: { _t: Date.now() },
+  });
+  return data ?? [];
 };
 
 export const getServer = async (id: string): Promise<Server> => {
@@ -49,6 +113,30 @@ export const generateServer = async (id: string): Promise<Blob> => {
   const { data } = await api.post(`/servers/${id}/generate`, {}, {
     responseType: 'blob',
   });
+  return data;
+};
+
+export interface GitHubExportOptions {
+  token: string;
+  owner: string;
+  repo: string;
+  branch?: string;
+  commit_message?: string;
+  create_repo?: boolean;
+  private?: boolean;
+  description?: string;
+}
+
+export interface GitHubExportResponse {
+  success: boolean;
+  repo_url: string;
+  commit_sha: string;
+  files: number;
+  message: string;
+}
+
+export const githubExport = async (id: string, options: GitHubExportOptions): Promise<GitHubExportResponse> => {
+  const { data } = await api.post<GitHubExportResponse>(`/servers/${id}/github-export`, options);
   return data;
 };
 
@@ -146,14 +234,246 @@ export const createContextConfig = async (serverId: string, config: Partial<Cont
   return data;
 };
 
+export const deleteContextConfig = async (id: string): Promise<void> => {
+  await api.delete(`/context-configs/${id}`);
+};
+
 // Composition APIs
 export const listCompositions = async (): Promise<ServerComposition[]> => {
   const { data } = await api.get<ServerComposition[]>('/compositions');
   return data || [];
 };
 
+export const getComposition = async (id: string): Promise<ServerComposition> => {
+  const { data } = await api.get<ServerComposition>(`/compositions/${id}`);
+  return data;
+};
+
 export const createComposition = async (composition: Partial<ServerComposition>): Promise<ServerComposition> => {
   const { data } = await api.post<ServerComposition>('/compositions', composition);
+  return data;
+};
+
+export const updateComposition = async (id: string, composition: Partial<ServerComposition>): Promise<ServerComposition> => {
+  const { data } = await api.put<ServerComposition>(`/compositions/${id}`, composition);
+  return data;
+};
+
+export const deleteComposition = async (id: string): Promise<void> => {
+  await api.delete(`/compositions/${id}`);
+};
+
+export interface CompositionExportOptions {
+  prefix_tool_names: boolean;
+  merge_resources: boolean;
+  merge_prompts: boolean;
+}
+
+export const exportComposition = async (id: string, options: CompositionExportOptions): Promise<Blob> => {
+  const { data } = await api.post(`/compositions/${id}/export`, options, {
+    responseType: 'blob',
+  });
+  return data;
+};
+
+// OpenAPI Import APIs
+export interface OpenAPIPreviewTool {
+  Name: string;
+  Description: string;
+  Method: string;
+  Path: string;
+  InputSchema: Record<string, unknown>;
+  PathParams: string[];
+  QueryParams: string[];
+}
+
+export interface OpenAPIPreview {
+  server: {
+    name: string;
+    description: string;
+    version: string;
+    base_url: string;
+  };
+  tools_count: number;
+  tools: OpenAPIPreviewTool[];
+  auth: {
+    type: string;
+    header_name?: string;
+    token_url?: string;
+    scopes?: string[];
+  } | null;
+}
+
+export interface OpenAPIImportResult {
+  server: Server;
+  tools_created: number;
+  tools: Tool[];
+}
+
+export const previewOpenAPIImport = async (spec: string): Promise<OpenAPIPreview> => {
+  const { data } = await api.post<OpenAPIPreview>('/import/openapi/preview', { spec });
+  return data;
+};
+
+export const importOpenAPI = async (
+  spec: string,
+  options?: {
+    server_name?: string;
+    description?: string;
+    base_url?: string;
+  }
+): Promise<OpenAPIImportResult> => {
+  const { data } = await api.post<OpenAPIImportResult>('/import/openapi', {
+    spec,
+    ...options,
+  });
+  return data;
+};
+
+// Flow APIs
+export interface Flow {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FlowNode {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+}
+
+export interface FlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+}
+
+export interface NodeResult {
+  node_id: string;
+  node_type: string;
+  success: boolean;
+  output?: Record<string, unknown>;
+  error?: string;
+  duration_ms: number;
+}
+
+export interface FlowExecutionResult {
+  success: boolean;
+  output?: Record<string, unknown>;
+  error?: string;
+  duration_ms: number;
+  node_results: NodeResult[];
+}
+
+export const listFlows = async (): Promise<Flow[]> => {
+  const { data } = await api.get<Flow[]>('/flows');
+  return data || [];
+};
+
+export const getFlow = async (id: string): Promise<Flow> => {
+  const { data } = await api.get<Flow>(`/flows/${id}`);
+  return data;
+};
+
+export const createFlow = async (flow: {
+  server_id: string;
+  name: string;
+  description?: string;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}): Promise<Flow> => {
+  const { data } = await api.post<Flow>('/flows', flow);
+  return data;
+};
+
+export const updateFlow = async (id: string, flow: {
+  name?: string;
+  description?: string;
+  nodes?: FlowNode[];
+  edges?: FlowEdge[];
+}): Promise<Flow> => {
+  const { data } = await api.put<Flow>(`/flows/${id}`, flow);
+  return data;
+};
+
+export const deleteFlow = async (id: string): Promise<void> => {
+  await api.delete(`/flows/${id}`);
+};
+
+export const getServerFlows = async (serverId: string): Promise<Flow[]> => {
+  const { data } = await api.get<Flow[]>(`/servers/${serverId}/flows`);
+  return data || [];
+};
+
+export const getSecurityScore = async (serverId: string): Promise<SecurityScoreResult> => {
+  const { data } = await api.get<SecurityScoreResult>(`/servers/${serverId}/security-score`);
+  return data;
+};
+
+export const executeFlow = async (id: string, input?: Record<string, unknown>, context?: Record<string, unknown>): Promise<FlowExecutionResult> => {
+  const { data } = await api.post<FlowExecutionResult>(`/flows/${id}/execute`, { input, context });
+  return data;
+};
+
+export const convertFlowToTool = async (id: string, toolName: string, description?: string): Promise<{ tool: Tool; message: string }> => {
+  const { data } = await api.post<{ tool: Tool; message: string }>(`/flows/${id}/convert`, {
+    tool_name: toolName,
+    description,
+  });
+  return data;
+};
+
+// Server Version APIs
+export const publishServer = async (serverId: string, request: PublishRequest): Promise<ServerVersion> => {
+  const { data } = await api.post<ServerVersion>(`/servers/${serverId}/publish`, request);
+  return data;
+};
+
+export const getServerVersions = async (serverId: string): Promise<ServerVersion[]> => {
+  const { data } = await api.get<ServerVersion[]>(`/servers/${serverId}/versions`);
+  return data || [];
+};
+
+export const getServerVersionSnapshot = async (serverId: string, version: string): Promise<{ version: ServerVersion; server: Server }> => {
+  const { data } = await api.get<{ version: ServerVersion; server: Server }>(`/servers/${serverId}/versions/${version}`);
+  return data;
+};
+
+export const downloadServerVersion = async (serverId: string, version: string): Promise<Blob> => {
+  const { data } = await api.get<Blob>(`/servers/${serverId}/versions/${version}/download`, {
+    responseType: 'blob',
+  });
+  return data;
+};
+
+// Marketplace APIs
+export const listMarketplace = async (): Promise<Server[]> => {
+  const { data } = await api.get<Server[]>('/marketplace');
+  return data || [];
+};
+
+export const getMarketplaceServer = async (id: string): Promise<{
+  server: Server;
+  versions: ServerVersion[];
+  security_score?: SecurityScoreResult;
+}> => {
+  const { data } = await api.get<{ server: Server; versions: ServerVersion[]; security_score?: SecurityScoreResult }>(`/marketplace/${id}`);
+  return data;
+};
+
+export const downloadMarketplaceServer = async (id: string): Promise<Blob> => {
+  const { data } = await api.get<Blob>(`/marketplace/${id}/download`, {
+    responseType: 'blob',
+  });
   return data;
 };
 

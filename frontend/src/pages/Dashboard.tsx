@@ -1,24 +1,45 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import type { Server } from '../types';
 import { listServers, createServer, deleteServer } from '../services/api';
 import CreateServerModal from '../components/CreateServerModal';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const { user, token } = useAuth();
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Refetch whenever auth identity or token changes so switching users always shows correct list
   useEffect(() => {
-    loadServers();
-  }, []);
+    if (!token || !user?.id) {
+      setServers([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    listServers()
+      .then((data) => {
+        if (!cancelled) setServers(data ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Failed to load servers');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [token, user?.id]);
 
   const loadServers = async () => {
     try {
       setLoading(true);
       const data = await listServers();
-      setServers(data);
+      setServers(data ?? []);
     } catch (error) {
       toast.error('Failed to load servers');
     } finally {
@@ -26,9 +47,9 @@ export default function Dashboard() {
     }
   };
 
-  const handleCreateServer = async (name: string, description: string) => {
+  const handleCreateServer = async (name: string, description: string, icon: string) => {
     try {
-      await createServer({ name, description, version: '1.0.0' });
+      await createServer({ name, description, version: '1.0.0', icon });
       toast.success('Server created successfully');
       setShowCreateModal(false);
       loadServers();
@@ -61,19 +82,37 @@ export default function Dashboard() {
     <div>
       <div className="page-header">
         <div>
+          <nav style={{ marginBottom: '0.5rem' }}>
+            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>
+              <i className="bi bi-house-door" style={{ marginRight: '0.375rem' }}></i>
+              Dashboard
+            </span>
+          </nav>
           <h1 className="page-title">MCP Servers</h1>
           <p className="page-subtitle">Create and manage your Model Context Protocol servers</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-          <i className="bi bi-plus-lg"></i>
-          New Server
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button className="btn btn-secondary" onClick={() => navigate('/import/openapi')}>
+            <i className="bi bi-file-earmark-code"></i>
+            Import OpenAPI
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+            <i className="bi bi-plus-lg"></i>
+            New Server
+          </button>
+        </div>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-value">{servers.length}</div>
           <div className="stat-label">Total Servers</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">
+            {servers.filter(s => s.status === 'published').length}
+          </div>
+          <div className="stat-label">Published</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">
@@ -86,12 +125,6 @@ export default function Dashboard() {
             {servers.reduce((acc, s) => acc + (s.resources?.length || 0), 0)}
           </div>
           <div className="stat-label">Total Resources</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {servers.reduce((acc, s) => acc + (s.prompts?.length || 0), 0)}
-          </div>
-          <div className="stat-label">Total Prompts</div>
         </div>
       </div>
 
@@ -113,14 +146,35 @@ export default function Dashboard() {
         <div className="server-grid">
           {servers.map((server) => (
             <div className="card" key={server.id}>
-              <div className="card-header">
-                <div>
-                  <h3 className="card-title">{server.name}</h3>
-                  <p className="card-description">
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  background: 'var(--primary-light)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.5rem',
+                  color: 'var(--primary-color)',
+                  flexShrink: 0
+                }}>
+                  <i className={`bi ${server.icon || 'bi-server'}`}></i>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <h3 className="card-title" style={{ margin: 0 }}>{server.name}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span className={`status-badge ${server.status || 'draft'}`} style={{ fontSize: '0.65rem' }}>
+                        {server.status === 'published' ? 'Published' : server.status === 'archived' ? 'Archived' : 'Draft'}
+                      </span>
+                      <span className="badge badge-primary">v{server.latest_version || server.version}</span>
+                    </div>
+                  </div>
+                  <p className="card-description" style={{ margin: '0.25rem 0 0 0' }}>
                     {server.description || 'No description'}
                   </p>
                 </div>
-                <span className="badge badge-primary">v{server.version}</span>
               </div>
               
               <div className="card-meta">
@@ -153,7 +207,7 @@ export default function Dashboard() {
                   <button 
                     className="btn btn-icon btn-secondary btn-sm"
                     onClick={() => handleDeleteServer(server.id)}
-                    title="Delete"
+                    data-tooltip="Delete"
                   >
                     <i className="bi bi-trash"></i>
                   </button>

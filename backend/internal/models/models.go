@@ -5,45 +5,93 @@ import (
 	"time"
 )
 
+// ServerStatus represents the publication status of a server
+type ServerStatus string
+
+const (
+	ServerStatusDraft     ServerStatus = "draft"
+	ServerStatusPublished ServerStatus = "published"
+	ServerStatusArchived  ServerStatus = "archived"
+)
+
 // Server represents an MCP server configuration
 type Server struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Version     string          `json:"version"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	Tools       []Tool          `json:"tools,omitempty"`
-	Resources   []Resource      `json:"resources,omitempty"`
-	Prompts     []Prompt        `json:"prompts,omitempty"`
-	AuthConfig  json.RawMessage `json:"auth_config,omitempty"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	Version        string          `json:"version"`
+	Icon           string          `json:"icon,omitempty"`
+	Status         ServerStatus    `json:"status"`
+	PublishedAt    *time.Time      `json:"published_at,omitempty"`
+	LatestVersion  string          `json:"latest_version,omitempty"`
+	OwnerID        string          `json:"owner_id,omitempty"`
+	IsPublic       bool            `json:"is_public"`
+	Downloads      int             `json:"downloads"`
+	SecurityScore  *int            `json:"security_score,omitempty"`  // 0-100, set for marketplace list/detail
+	SecurityGrade  *string         `json:"security_grade,omitempty"`  // A/B/C/D/F
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+	Tools          []Tool          `json:"tools,omitempty"`
+	Resources      []Resource      `json:"resources,omitempty"`
+	Prompts        []Prompt        `json:"prompts,omitempty"`
+	AuthConfig     json.RawMessage `json:"auth_config,omitempty"`
+}
+
+// ServerVersion represents a published snapshot of a server
+type ServerVersion struct {
+	ID           string          `json:"id"`
+	ServerID     string          `json:"server_id"`
+	Version      string          `json:"version"`
+	ReleaseNotes string          `json:"release_notes"`
+	Snapshot     json.RawMessage `json:"snapshot"`
+	PublishedBy  string          `json:"published_by"`
+	PublishedAt  time.Time       `json:"published_at"`
+}
+
+// PublishRequest represents a request to publish a server version
+type PublishRequest struct {
+	Version      string `json:"version" binding:"required"`
+	ReleaseNotes string `json:"release_notes"`
+	IsPublic     bool   `json:"is_public"`
 }
 
 // ExecutionType defines how a tool is executed
 type ExecutionType string
 
 const (
-	ExecutionTypeRestAPI   ExecutionType = "rest_api"
-	ExecutionTypeGraphQL   ExecutionType = "graphql"
-	ExecutionTypeDatabase  ExecutionType = "database"
+	ExecutionTypeRestAPI    ExecutionType = "rest_api"
+	ExecutionTypeGraphQL    ExecutionType = "graphql"
+	ExecutionTypeDatabase   ExecutionType = "database"
 	ExecutionTypeJavaScript ExecutionType = "javascript"
-	ExecutionTypePython    ExecutionType = "python"
-	ExecutionTypeWebhook   ExecutionType = "webhook"
+	ExecutionTypePython     ExecutionType = "python"
+	ExecutionTypeWebhook    ExecutionType = "webhook"
+	ExecutionTypeCLI        ExecutionType = "cli"
+	ExecutionTypeFlow       ExecutionType = "flow"
+)
+
+// OutputDisplay defines how tool output is presented in MCP Apps–capable clients (e.g. table, card, json).
+const (
+	OutputDisplayJSON  = "json"
+	OutputDisplayTable = "table"
+	OutputDisplayCard  = "card"
 )
 
 // Tool represents an MCP tool definition
 type Tool struct {
-	ID             string          `json:"id"`
-	ServerID       string          `json:"server_id"`
-	Name           string          `json:"name"`
-	Description    string          `json:"description"`
-	InputSchema    json.RawMessage `json:"input_schema"`
-	OutputSchema   json.RawMessage `json:"output_schema"`
-	ExecutionType  ExecutionType   `json:"execution_type"`
+	ID              string          `json:"id"`
+	ServerID        string          `json:"server_id"`
+	Name            string          `json:"name"`
+	Description     string          `json:"description"`
+	InputSchema     json.RawMessage `json:"input_schema"`
+	OutputSchema    json.RawMessage `json:"output_schema"`
+	ExecutionType   ExecutionType   `json:"execution_type"`
 	ExecutionConfig json.RawMessage `json:"execution_config"`
-	ContextFields  []string        `json:"context_fields,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ContextFields   []string        `json:"context_fields,omitempty"`
+	OutputDisplay   string          `json:"output_display,omitempty"`   // "json" or "table" — MCP Apps style
+	ReadOnlyHint    bool            `json:"read_only_hint,omitempty"`   // if true, tool is read-only; gateways may block write operations
+	DestructiveHint bool            `json:"destructive_hint,omitempty"` // if true, tool can modify/delete; clients may require confirmation
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 // Resource represents an MCP resource endpoint
@@ -148,6 +196,7 @@ type ServerComposition struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	ServerIDs   []string `json:"server_ids"`
+	OwnerID     string   `json:"owner_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -157,6 +206,8 @@ type CreateServerRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
 	Version     string `json:"version"`
+	Icon        string `json:"icon"`
+	OwnerID     string `json:"-"` // Set by API from auth; not accepted from client
 }
 
 type CreateToolRequest struct {
@@ -168,6 +219,9 @@ type CreateToolRequest struct {
 	ExecutionType   ExecutionType   `json:"execution_type" binding:"required"`
 	ExecutionConfig json.RawMessage `json:"execution_config"`
 	ContextFields   []string        `json:"context_fields"`
+	OutputDisplay   string          `json:"output_display"`   // "json" or "table"
+	ReadOnlyHint    bool            `json:"read_only_hint"`   // tool is read-only; gateways may enforce
+	DestructiveHint bool            `json:"destructive_hint"` // tool can modify/delete; require user confirmation
 }
 
 type CreateResourceRequest struct {
@@ -210,4 +264,111 @@ type PolicyEvaluationResult struct {
 	Allowed     bool     `json:"allowed"`
 	Reason      string   `json:"reason,omitempty"`
 	ViolatedRules []string `json:"violated_rules,omitempty"`
+}
+
+// Flow represents a visual tool flow/pipeline
+type Flow struct {
+	ID          string          `json:"id"`
+	ServerID    string          `json:"server_id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Nodes       json.RawMessage `json:"nodes"`
+	Edges       json.RawMessage `json:"edges"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
+// FlowNode represents a node in a flow
+type FlowNode struct {
+	ID       string          `json:"id"`
+	Type     string          `json:"type"`
+	Position FlowPosition    `json:"position"`
+	Data     json.RawMessage `json:"data"`
+}
+
+type FlowPosition struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// FlowEdge represents a connection between nodes
+type FlowEdge struct {
+	ID           string `json:"id"`
+	Source       string `json:"source"`
+	Target       string `json:"target"`
+	SourceHandle string `json:"sourceHandle,omitempty"`
+	TargetHandle string `json:"targetHandle,omitempty"`
+}
+
+type CreateFlowRequest struct {
+	ServerID    string          `json:"server_id" binding:"required"`
+	Name        string          `json:"name" binding:"required"`
+	Description string          `json:"description"`
+	Nodes       json.RawMessage `json:"nodes" binding:"required"`
+	Edges       json.RawMessage `json:"edges" binding:"required"`
+}
+
+type UpdateFlowRequest struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Nodes       json.RawMessage `json:"nodes"`
+	Edges       json.RawMessage `json:"edges"`
+}
+
+// FlowExecutionRequest for testing a flow
+type FlowExecutionRequest struct {
+	FlowID  string          `json:"flow_id" binding:"required"`
+	Input   json.RawMessage `json:"input"`
+	Context json.RawMessage `json:"context,omitempty"`
+}
+
+type FlowExecutionResponse struct {
+	Success    bool              `json:"success"`
+	Output     json.RawMessage   `json:"output,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Duration   int64             `json:"duration_ms"`
+	NodeResults []NodeResult     `json:"node_results,omitempty"`
+}
+
+type NodeResult struct {
+	NodeID   string          `json:"node_id"`
+	NodeType string          `json:"node_type"`
+	Success  bool            `json:"success"`
+	Output   json.RawMessage `json:"output,omitempty"`
+	Error    string          `json:"error,omitempty"`
+	Duration int64           `json:"duration_ms"`
+}
+
+// User represents a user account
+type User struct {
+	ID           string    `json:"id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	PasswordHash string    `json:"-"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// Auth request/response types
+type LoginRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
+}
+
+type RegisterRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Name     string `json:"name" binding:"required"`
+	Password string `json:"password" binding:"required,min=6"`
+}
+
+type AuthResponse struct {
+	Token string `json:"token"`
+	User  User   `json:"user"`
+}
+
+type UserResponse struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }

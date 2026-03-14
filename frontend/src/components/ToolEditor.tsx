@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import Editor from '@monaco-editor/react';
 import type { Tool, ExecutionType } from '../types';
@@ -9,6 +9,7 @@ interface Props {
   tools: Tool[];
   onToolCreated: () => void;
   onToolDeleted: (id: string) => void;
+  focusToolId?: string | null;
 }
 
 type AuthType = 'none' | 'api_key' | 'bearer_token' | 'basic_auth' | 'oauth2';
@@ -35,13 +36,147 @@ interface AuthConfig {
   };
 }
 
-const executionTypes: { value: ExecutionType; label: string; icon: string }[] = [
-  { value: 'rest_api', label: 'REST API', icon: 'bi-globe' },
-  { value: 'graphql', label: 'GraphQL', icon: 'bi-diagram-3' },
-  { value: 'webhook', label: 'Webhook', icon: 'bi-link-45deg' },
-  { value: 'javascript', label: 'JavaScript', icon: 'bi-filetype-js' },
-  { value: 'python', label: 'Python', icon: 'bi-filetype-py' },
-  { value: 'database', label: 'Database', icon: 'bi-database' },
+const executionTypes: { value: ExecutionType; label: string; icon: string; description?: string }[] = [
+  { value: 'rest_api', label: 'REST API', icon: 'bi-globe', description: 'Call external REST APIs' },
+  { value: 'graphql', label: 'GraphQL', icon: 'bi-diagram-3', description: 'Execute GraphQL queries' },
+  { value: 'webhook', label: 'Webhook', icon: 'bi-link-45deg', description: 'Send data to webhooks' },
+  { value: 'cli', label: 'CLI Command', icon: 'bi-terminal', description: 'Execute shell commands' },
+  { value: 'javascript', label: 'JavaScript', icon: 'bi-filetype-js', description: 'Run JavaScript code' },
+  { value: 'python', label: 'Python', icon: 'bi-filetype-py', description: 'Run Python scripts' },
+  { value: 'database', label: 'Database', icon: 'bi-database', description: 'Execute SQL queries' },
+];
+
+// Common CLI tool templates
+const cliTemplates: { name: string; icon: string; command: string; description: string; inputSchema: object }[] = [
+  {
+    name: 'kubectl get pods',
+    icon: 'bi-cloud',
+    command: 'kubectl get pods -n {{namespace}} -o json',
+    description: 'List Kubernetes pods in a namespace',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        namespace: { type: 'string', description: 'Kubernetes namespace', default: 'default' }
+      },
+      required: ['namespace']
+    }
+  },
+  {
+    name: 'kubectl describe',
+    icon: 'bi-cloud',
+    command: 'kubectl describe {{resource_type}} {{resource_name}} -n {{namespace}}',
+    description: 'Describe a Kubernetes resource',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        resource_type: { type: 'string', description: 'Resource type (pod, deployment, service)', default: 'pod' },
+        resource_name: { type: 'string', description: 'Resource name' },
+        namespace: { type: 'string', description: 'Namespace', default: 'default' }
+      },
+      required: ['resource_type', 'resource_name']
+    }
+  },
+  {
+    name: 'docker ps',
+    icon: 'bi-box',
+    command: 'docker ps --format "table {{{{.Names}}}}\\t{{{{.Status}}}}\\t{{{{.Ports}}}}"',
+    description: 'List running Docker containers',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'docker logs',
+    icon: 'bi-box',
+    command: 'docker logs {{container}} --tail {{lines}}',
+    description: 'Get Docker container logs',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        container: { type: 'string', description: 'Container name or ID' },
+        lines: { type: 'number', description: 'Number of lines', default: 100 }
+      },
+      required: ['container']
+    }
+  },
+  {
+    name: 'terraform plan',
+    icon: 'bi-diagram-2',
+    command: 'terraform plan -var-file={{var_file}}',
+    description: 'Preview Terraform changes',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        var_file: { type: 'string', description: 'Path to variables file', default: 'terraform.tfvars' }
+      }
+    }
+  },
+  {
+    name: 'terraform apply',
+    icon: 'bi-diagram-2',
+    command: 'terraform apply -auto-approve -var-file={{var_file}}',
+    description: 'Apply Terraform changes',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        var_file: { type: 'string', description: 'Path to variables file', default: 'terraform.tfvars' }
+      }
+    }
+  },
+  {
+    name: 'aws s3 ls',
+    icon: 'bi-cloud-arrow-up',
+    command: 'aws s3 ls s3://{{bucket}}/{{prefix}}',
+    description: 'List S3 bucket contents',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bucket: { type: 'string', description: 'S3 bucket name' },
+        prefix: { type: 'string', description: 'Object prefix', default: '' }
+      },
+      required: ['bucket']
+    }
+  },
+  {
+    name: 'git status',
+    icon: 'bi-git',
+    command: 'git -C {{repo_path}} status --porcelain',
+    description: 'Get git repository status',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: 'Path to git repository', default: '.' }
+      }
+    }
+  },
+  {
+    name: 'git log',
+    icon: 'bi-git',
+    command: 'git -C {{repo_path}} log --oneline -n {{count}}',
+    description: 'Get recent git commits',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: 'Path to git repository', default: '.' },
+        count: { type: 'number', description: 'Number of commits', default: 10 }
+      }
+    }
+  },
+  {
+    name: 'npm run',
+    icon: 'bi-box-seam',
+    command: 'npm run {{script}} --prefix {{project_path}}',
+    description: 'Run npm script',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        script: { type: 'string', description: 'Script name (build, test, etc.)' },
+        project_path: { type: 'string', description: 'Project path', default: '.' }
+      },
+      required: ['script']
+    }
+  },
 ];
 
 const authTypes: { value: AuthType; label: string; icon: string; description: string }[] = [
@@ -52,7 +187,7 @@ const authTypes: { value: AuthType; label: string; icon: string; description: st
   { value: 'oauth2', label: 'OAuth 2.0', icon: 'bi-shield-check', description: 'Client credentials flow' },
 ];
 
-export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted }: Props) {
+export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted, focusToolId }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'auth' | 'schema' | 'config'>('basic');
@@ -64,6 +199,9 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
   const [outputSchema, setOutputSchema] = useState('{\n  "type": "object",\n  "properties": {\n    \n  }\n}');
   const [executionConfig, setExecutionConfig] = useState('{\n  "url": "",\n  "method": "GET",\n  "headers": {}\n}');
   const [contextFields, setContextFields] = useState('');
+  const [outputDisplay, setOutputDisplay] = useState<'json' | 'table' | 'card'>('json');
+  const [readOnlyHint, setReadOnlyHint] = useState(false);
+  const [destructiveHint, setDestructiveHint] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Auth state
@@ -79,6 +217,12 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
   const [oauth2ClientSecret, setOauth2ClientSecret] = useState('');
   const [oauth2Scope, setOauth2Scope] = useState('');
 
+  // Schema generator state
+  const [showSchemaGenerator, setShowSchemaGenerator] = useState(false);
+  const [schemaGeneratorTarget, setSchemaGeneratorTarget] = useState<'input' | 'output'>('output');
+  const [sampleJson, setSampleJson] = useState('');
+  const [schemaGeneratorError, setSchemaGeneratorError] = useState('');
+
   const resetForm = () => {
     setName('');
     setDescription('');
@@ -87,6 +231,9 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
     setOutputSchema('{\n  "type": "object",\n  "properties": {\n    \n  }\n}');
     setExecutionConfig('{\n  "url": "",\n  "method": "GET",\n  "headers": {}\n}');
     setContextFields('');
+    setOutputDisplay('json');
+    setReadOnlyHint(false);
+    setDestructiveHint(false);
     setEditingTool(null);
     setActiveTab('basic');
     // Reset auth
@@ -102,6 +249,15 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
     setOauth2ClientSecret('');
     setOauth2Scope('');
   };
+
+  // When focusToolId changes, automatically open that tool in edit mode
+  useEffect(() => {
+    if (!focusToolId || !tools || tools.length === 0) return;
+    const t = tools.find((tool) => tool.id === focusToolId);
+    if (t) {
+      handleEdit(t);
+    }
+  }, [focusToolId, tools]);
 
   const extractAuthFromConfig = (config: Record<string, unknown>) => {
     const headers = (config.headers || {}) as Record<string, string>;
@@ -157,6 +313,9 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
     setOutputSchema(JSON.stringify(tool.output_schema || {}, null, 2));
     setExecutionConfig(JSON.stringify(tool.execution_config || {}, null, 2));
     setContextFields(tool.context_fields?.join(', ') || '');
+    setOutputDisplay(tool.output_display === 'table' ? 'table' : tool.output_display === 'card' ? 'card' : 'json');
+    setReadOnlyHint(Boolean(tool.read_only_hint));
+    setDestructiveHint(Boolean(tool.destructive_hint));
     extractAuthFromConfig(tool.execution_config || {});
     setShowForm(true);
     setActiveTab('basic');
@@ -254,17 +413,23 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
         return;
       }
 
-      // Merge auth headers into execution config
+      // Merge auth headers into execution config (or clear auth when "No Authentication")
       const authHeaders = buildAuthHeaders();
       const authConfig = buildAuthConfig();
-      
-      parsedExecutionConfig.headers = {
-        ...parsedExecutionConfig.headers,
-        ...authHeaders,
-      };
-      
-      if (authConfig) {
-        parsedExecutionConfig.auth = authConfig;
+
+      if (authType === 'none') {
+        delete parsedExecutionConfig.auth;
+        parsedExecutionConfig.headers = { ...(parsedExecutionConfig.headers || {}) };
+        delete parsedExecutionConfig.headers['Authorization'];
+        delete parsedExecutionConfig.headers['authorization'];
+      } else {
+        parsedExecutionConfig.headers = {
+          ...(parsedExecutionConfig.headers || {}),
+          ...authHeaders,
+        };
+        if (authConfig) {
+          parsedExecutionConfig.auth = authConfig;
+        }
       }
 
       const toolData = {
@@ -276,6 +441,9 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
         output_schema: parsedOutputSchema,
         execution_config: parsedExecutionConfig,
         context_fields: contextFields.split(',').map(f => f.trim()).filter(Boolean),
+        output_display: outputDisplay,
+        read_only_hint: readOnlyHint,
+        destructive_hint: destructiveHint,
       };
 
       if (editingTool) {
@@ -306,9 +474,121 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
         return '{\n  "url": "https://example.com/webhook",\n  "headers": {}\n}';
       case 'database':
         return '{\n  "connection_string": "",\n  "query": "SELECT * FROM table WHERE id = {{id}}"\n}';
+      case 'cli':
+        return '{\n  "command": "echo {{message}}",\n  "timeout": 30000,\n  "working_dir": ".",\n  "shell": "/bin/bash",\n  "allowed_commands": ["echo", "ls", "cat"],\n  "env": {}\n}';
       default:
         return '{}';
     }
+  };
+
+  const applyCLITemplate = (template: typeof cliTemplates[0]) => {
+    setName(template.name.toLowerCase().replace(/\s+/g, '_'));
+    setDescription(template.description);
+    setInputSchema(JSON.stringify(template.inputSchema, null, 2));
+    setExecutionConfig(JSON.stringify({
+      command: template.command,
+      timeout: 30000,
+      working_dir: '.',
+      shell: '/bin/bash',
+      env: {}
+    }, null, 2));
+  };
+
+  // Generate JSON Schema from sample JSON
+  const generateSchemaFromSample = (sample: unknown, depth = 0): Record<string, unknown> => {
+    if (sample === null) {
+      return { type: 'null' };
+    }
+
+    if (Array.isArray(sample)) {
+      if (sample.length === 0) {
+        return { type: 'array', items: {} };
+      }
+      // Use the first item to infer the array item schema
+      return {
+        type: 'array',
+        items: generateSchemaFromSample(sample[0], depth + 1),
+      };
+    }
+
+    if (typeof sample === 'object') {
+      const properties: Record<string, unknown> = {};
+      const required: string[] = [];
+
+      for (const [key, value] of Object.entries(sample)) {
+        properties[key] = generateSchemaFromSample(value, depth + 1);
+        if (value !== null && value !== undefined) {
+          required.push(key);
+        }
+      }
+
+      const schema: Record<string, unknown> = {
+        type: 'object',
+        properties,
+      };
+
+      if (required.length > 0 && depth === 0) {
+        schema.required = required;
+      }
+
+      return schema;
+    }
+
+    if (typeof sample === 'string') {
+      // Try to detect special string formats
+      if (/^\d{4}-\d{2}-\d{2}(T|\s)/.test(sample)) {
+        return { type: 'string', format: 'date-time' };
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(sample)) {
+        return { type: 'string', format: 'date' };
+      }
+      if (/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(sample)) {
+        return { type: 'string', format: 'email' };
+      }
+      if (/^https?:\/\//.test(sample)) {
+        return { type: 'string', format: 'uri' };
+      }
+      return { type: 'string' };
+    }
+
+    if (typeof sample === 'number') {
+      return Number.isInteger(sample) ? { type: 'integer' } : { type: 'number' };
+    }
+
+    if (typeof sample === 'boolean') {
+      return { type: 'boolean' };
+    }
+
+    return {};
+  };
+
+  const handleGenerateSchema = () => {
+    setSchemaGeneratorError('');
+    
+    try {
+      const parsed = JSON.parse(sampleJson);
+      const schema = generateSchemaFromSample(parsed);
+      const schemaStr = JSON.stringify(schema, null, 2);
+
+      if (schemaGeneratorTarget === 'input') {
+        setInputSchema(schemaStr);
+      } else {
+        setOutputSchema(schemaStr);
+      }
+
+      setShowSchemaGenerator(false);
+      setSampleJson('');
+      toast.success(`${schemaGeneratorTarget === 'input' ? 'Input' : 'Output'} schema generated`);
+    } catch (e) {
+      setSchemaGeneratorError('Invalid JSON. Please paste valid JSON data.');
+    }
+  };
+
+  const openSchemaGenerator = (target: 'input' | 'output') => {
+    setSchemaGeneratorTarget(target);
+    setSampleJson('');
+    setSchemaGeneratorError('');
+    setShowSchemaGenerator(true);
   };
 
   const renderAuthConfig = () => (
@@ -631,7 +911,18 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
           {activeTab === 'schema' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group">
-                <label className="form-label">Input Schema (JSON Schema)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Input Schema (JSON Schema)</label>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => openSchemaGenerator('input')}
+                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  >
+                    <i className="bi bi-magic" style={{ marginRight: '0.25rem' }}></i>
+                    Generate from Sample
+                  </button>
+                </div>
                 <div className="editor-container">
                   <Editor
                     height="300px"
@@ -650,7 +941,18 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
               </div>
 
               <div className="form-group">
-                <label className="form-label">Output Schema (JSON Schema)</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <label className="form-label" style={{ margin: 0 }}>Output Schema (JSON Schema)</label>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => openSchemaGenerator('output')}
+                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  >
+                    <i className="bi bi-magic" style={{ marginRight: '0.25rem' }}></i>
+                    Generate from Sample
+                  </button>
+                </div>
                 <div className="editor-container">
                   <Editor
                     height="300px"
@@ -667,43 +969,161 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
                   />
                 </div>
               </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">Output display (MCP Apps)</label>
+                <select
+                  className="form-control"
+                  value={outputDisplay}
+                  onChange={(e) => setOutputDisplay(e.target.value as 'json' | 'table' | 'card')}
+                  style={{ maxWidth: '280px' }}
+                >
+                  <option value="json">Default (JSON)</option>
+                  <option value="table">Table</option>
+                  <option value="card">Card</option>
+                </select>
+                <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                  Table: object or array as table. Card: single object with a main text field (e.g. joke, quote) shown in large type.
+                </small>
+              </div>
+
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">Security hints (MCP best practices)</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-start' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={readOnlyHint}
+                      onChange={(e) => setReadOnlyHint(e.target.checked)}
+                    />
+                    <span>Read-only</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={destructiveHint}
+                      onChange={(e) => setDestructiveHint(e.target.checked)}
+                    />
+                    <span>Destructive (modify/delete)</span>
+                  </label>
+                </div>
+                <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                  Read-only: gateways may block write operations. Destructive: clients can require user confirmation before running.
+                </small>
+              </div>
             </div>
           )}
 
           {activeTab === 'config' && (
-            <div className="form-group">
-              <label className="form-label">
-                Execution Configuration
-                <span style={{ fontWeight: 'normal', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                  (Use {'{{field}}'} for input variables)
-                </span>
-              </label>
-              <div className="editor-container">
-                <Editor
-                  height="300px"
-                  language="json"
-                  theme="vs-dark"
-                  value={executionConfig}
-                  onChange={(value) => setExecutionConfig(value || '')}
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 13,
-                    lineNumbers: 'off',
-                    folding: false,
-                  }}
-                />
-              </div>
-              <div style={{ 
-                marginTop: '1rem', 
-                padding: '1rem', 
-                background: 'rgba(129, 140, 248, 0.1)', 
-                borderRadius: '8px',
-                border: '1px solid rgba(129, 140, 248, 0.2)'
-              }}>
-                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  <i className="bi bi-info-circle" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
-                  Auth headers from the Authentication tab will be automatically merged into the headers object.
-                </p>
+            <div>
+              {/* CLI Templates */}
+              {executionType === 'cli' && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label className="form-label">
+                    <i className="bi bi-lightning" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
+                    Quick Templates
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.5rem' }}>
+                    {cliTemplates.map((template, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => applyCLITemplate(template)}
+                        style={{
+                          padding: '0.75rem',
+                          background: 'var(--dark-bg)',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--primary-color)';
+                          e.currentTarget.style.background = 'rgba(129, 140, 248, 0.1)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--card-border)';
+                          e.currentTarget.style.background = 'var(--dark-bg)';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                          <i className={`bi ${template.icon}`} style={{ color: 'var(--primary-color)' }}></i>
+                          <span style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: '0.875rem' }}>
+                            {template.name}
+                          </span>
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', margin: 0 }}>
+                          {template.description}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">
+                  Execution Configuration
+                  <span style={{ fontWeight: 'normal', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                    (Use {'{{field}}'} for input variables)
+                  </span>
+                </label>
+                <div className="editor-container">
+                  <Editor
+                    height="300px"
+                    language="json"
+                    theme="vs-dark"
+                    value={executionConfig}
+                    onChange={(value) => setExecutionConfig(value || '')}
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      lineNumbers: 'off',
+                      folding: false,
+                    }}
+                  />
+                </div>
+                
+                {/* CLI-specific help */}
+                {executionType === 'cli' && (
+                  <div style={{ 
+                    marginTop: '1rem', 
+                    padding: '1rem', 
+                    background: 'rgba(245, 158, 11, 0.1)', 
+                    borderRadius: '8px',
+                    border: '1px solid rgba(245, 158, 11, 0.3)'
+                  }}>
+                    <h5 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                      <i className="bi bi-terminal" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
+                      CLI Configuration Options
+                    </h5>
+                    <ul style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', margin: 0, paddingLeft: '1.25rem' }}>
+                      <li><code style={{ color: '#a5f3fc' }}>command</code> - Shell command with {'{{variable}}'} placeholders</li>
+                      <li><code style={{ color: '#a5f3fc' }}>timeout</code> - Max execution time in ms (default: 30000)</li>
+                      <li><code style={{ color: '#a5f3fc' }}>working_dir</code> - Working directory for command</li>
+                      <li><code style={{ color: '#a5f3fc' }}>shell</code> - Shell to use (default: /bin/bash)</li>
+                      <li><code style={{ color: '#a5f3fc' }}>allowed_commands</code> - Whitelist of allowed base commands</li>
+                      <li><code style={{ color: '#a5f3fc' }}>env</code> - Additional environment variables</li>
+                    </ul>
+                  </div>
+                )}
+                
+                {/* Auth info for API types */}
+                {['rest_api', 'graphql', 'webhook'].includes(executionType) && (
+                  <div style={{ 
+                    marginTop: '1rem', 
+                    padding: '1rem', 
+                    background: 'rgba(129, 140, 248, 0.1)', 
+                    borderRadius: '8px',
+                    border: '1px solid rgba(129, 140, 248, 0.2)'
+                  }}>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', margin: 0 }}>
+                      <i className="bi bi-info-circle" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+                      Auth headers from the Authentication tab will be automatically merged into the headers object.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -721,6 +1141,132 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
             </button>
           </div>
         </form>
+
+        {/* Schema Generator Modal - inside form view */}
+        {showSchemaGenerator && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+            }}
+            onClick={() => setShowSchemaGenerator(false)}
+          >
+            <div 
+              style={{
+                background: 'var(--card-bg)',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '700px',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '1rem 1.25rem',
+                borderBottom: '1px solid var(--card-border)'
+              }}>
+                <h3 style={{ margin: 0, fontSize: '1.125rem' }}>
+                  <i className="bi bi-magic" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+                  Generate {schemaGeneratorTarget === 'input' ? 'Input' : 'Output'} Schema
+                </h3>
+                <button 
+                  className="btn btn-icon btn-secondary"
+                  onClick={() => setShowSchemaGenerator(false)}
+                >
+                  <i className="bi bi-x-lg"></i>
+                </button>
+              </div>
+              <div style={{ padding: '1.25rem' }}>
+                <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                  Paste a sample JSON {schemaGeneratorTarget === 'input' ? 'request body' : 'API response'} below. 
+                  We'll automatically generate a JSON Schema from it.
+                </p>
+
+                <div className="form-group">
+                  <label className="form-label">Sample JSON</label>
+                  <div className="editor-container" style={{ border: schemaGeneratorError ? '2px solid var(--danger-color)' : undefined }}>
+                    <Editor
+                      height="300px"
+                      language="json"
+                      theme="vs-dark"
+                      value={sampleJson}
+                      onChange={(value) => {
+                        setSampleJson(value || '');
+                        setSchemaGeneratorError('');
+                      }}
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        lineNumbers: 'on',
+                        folding: true,
+                        formatOnPaste: true,
+                      }}
+                    />
+                  </div>
+                  {schemaGeneratorError && (
+                    <div style={{ color: 'var(--danger-color)', fontSize: '0.8125rem', marginTop: '0.5rem' }}>
+                      <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.25rem' }}></i>
+                      {schemaGeneratorError}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ 
+                  background: 'var(--hover-bg)', 
+                  borderRadius: '8px', 
+                  padding: '1rem',
+                  marginTop: '1rem'
+                }}>
+                  <div style={{ fontWeight: 500, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
+                    Tips
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                    <li>Paste a complete JSON response from your API</li>
+                    <li>Include all fields you want in the schema</li>
+                    <li>Dates, emails, and URLs are auto-detected</li>
+                    <li>Arrays use the first item to infer the item schema</li>
+                  </ul>
+                </div>
+              </div>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                gap: '0.75rem',
+                padding: '1rem 1.25rem',
+                borderTop: '1px solid var(--card-border)'
+              }}>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => setShowSchemaGenerator(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn btn-primary"
+                  onClick={handleGenerateSchema}
+                  disabled={!sampleJson.trim()}
+                >
+                  <i className="bi bi-magic"></i>
+                  Generate Schema
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -780,18 +1326,18 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div className="tool-actions">
                   <button 
                     className="btn btn-icon btn-secondary btn-sm"
                     onClick={() => handleEdit(tool)}
-                    title="Edit"
+                    data-tooltip="Edit"
                   >
                     <i className="bi bi-pencil"></i>
                   </button>
                   <button 
                     className="btn btn-icon btn-secondary btn-sm"
                     onClick={() => onToolDeleted(tool.id)}
-                    title="Delete"
+                    data-tooltip="Delete"
                   >
                     <i className="bi bi-trash"></i>
                   </button>
@@ -799,6 +1345,132 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Schema Generator Modal */}
+      {showSchemaGenerator && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowSchemaGenerator(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--card-bg)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '700px',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid var(--card-border)'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.125rem' }}>
+                <i className="bi bi-magic" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+                Generate {schemaGeneratorTarget === 'input' ? 'Input' : 'Output'} Schema
+              </h3>
+              <button 
+                className="btn btn-icon btn-secondary"
+                onClick={() => setShowSchemaGenerator(false)}
+              >
+                <i className="bi bi-x-lg"></i>
+              </button>
+            </div>
+            <div style={{ padding: '1.25rem' }}>
+              <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                Paste a sample JSON {schemaGeneratorTarget === 'input' ? 'request body' : 'API response'} below. 
+                We'll automatically generate a JSON Schema from it.
+              </p>
+
+              <div className="form-group">
+                <label className="form-label">Sample JSON</label>
+                <div className="editor-container" style={{ border: schemaGeneratorError ? '2px solid var(--danger-color)' : undefined }}>
+                  <Editor
+                    height="300px"
+                    language="json"
+                    theme="vs-dark"
+                    value={sampleJson}
+                    onChange={(value) => {
+                      setSampleJson(value || '');
+                      setSchemaGeneratorError('');
+                    }}
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 13,
+                      lineNumbers: 'on',
+                      folding: true,
+                      formatOnPaste: true,
+                    }}
+                  />
+                </div>
+                {schemaGeneratorError && (
+                  <div style={{ color: 'var(--danger-color)', fontSize: '0.8125rem', marginTop: '0.5rem' }}>
+                    <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.25rem' }}></i>
+                    {schemaGeneratorError}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ 
+                background: 'var(--hover-bg)', 
+                borderRadius: '8px', 
+                padding: '1rem',
+                marginTop: '1rem'
+              }}>
+                <div style={{ fontWeight: 500, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
+                  Tips
+                </div>
+                <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  <li>Paste a complete JSON response from your API</li>
+                  <li>Include all fields you want in the schema</li>
+                  <li>Dates, emails, and URLs are auto-detected</li>
+                  <li>Arrays use the first item to infer the item schema</li>
+                </ul>
+              </div>
+            </div>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '0.75rem',
+              padding: '1rem 1.25rem',
+              borderTop: '1px solid var(--card-border)'
+            }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowSchemaGenerator(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={handleGenerateSchema}
+                disabled={!sampleJson.trim()}
+              >
+                <i className="bi bi-magic"></i>
+                Generate Schema
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

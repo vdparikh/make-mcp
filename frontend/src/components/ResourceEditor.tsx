@@ -173,13 +173,13 @@ export default function ResourceEditor({ serverId, resources, onResourceCreated,
         <div>
           {resources.map((resource) => (
             <div key={resource.id} className="tool-card">
-              <div className="tool-icon" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
+              <div className="tool-icon" style={{ background: '#10b981', color: 'white' }}>
                 <i className="bi bi-folder-fill"></i>
               </div>
               <div className="tool-info">
                 <div className="tool-name">{resource.name}</div>
                 <div className="tool-description">
-                  <code style={{ background: 'var(--dark-bg)', padding: '0.125rem 0.5rem', borderRadius: '4px' }}>
+                  <code style={{ background: '#1a1a2e', color: '#e5e7eb', padding: '0.125rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
                     {resource.uri}
                   </code>
                 </div>
@@ -187,11 +187,24 @@ export default function ResourceEditor({ serverId, resources, onResourceCreated,
                   <span className="badge badge-success">{resource.mime_type}</span>
                 </div>
               </div>
-              <div>
+              <div className="tool-actions">
+                <button 
+                  className="btn btn-icon btn-secondary btn-sm"
+                  onClick={() => {
+                    setName(resource.name);
+                    setUri(resource.uri);
+                    setMimeType(resource.mime_type);
+                    setHandler(JSON.stringify(resource.handler || {}, null, 2));
+                    setShowForm(true);
+                  }}
+                  data-tooltip="Edit"
+                >
+                  <i className="bi bi-pencil"></i>
+                </button>
                 <button 
                   className="btn btn-icon btn-secondary btn-sm"
                   onClick={() => onResourceDeleted(resource.id)}
-                  title="Delete"
+                  data-tooltip="Delete"
                 >
                   <i className="bi bi-trash"></i>
                 </button>

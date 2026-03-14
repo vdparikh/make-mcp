@@ -4,13 +4,26 @@ export type ExecutionType =
   | 'database' 
   | 'javascript' 
   | 'python' 
-  | 'webhook';
+  | 'webhook'
+  | 'cli'
+  | 'flow';
+
+export type ServerStatus = 'draft' | 'published' | 'archived';
 
 export interface Server {
   id: string;
   name: string;
   description: string;
   version: string;
+  icon?: string;
+  status: ServerStatus;
+  published_at?: string;
+  latest_version?: string;
+  owner_id?: string;
+  is_public: boolean;
+  downloads: number;
+  security_score?: number;
+  security_grade?: string;
   created_at: string;
   updated_at: string;
   tools?: Tool[];
@@ -18,6 +31,43 @@ export interface Server {
   prompts?: Prompt[];
   auth_config?: Record<string, unknown>;
 }
+
+export interface ServerVersion {
+  id: string;
+  server_id: string;
+  version: string;
+  release_notes: string;
+  snapshot: Record<string, unknown>;
+  published_by: string;
+  published_at: string;
+}
+
+export interface PublishRequest {
+  version: string;
+  release_notes: string;
+  is_public: boolean;
+}
+
+/** Security score from SlowMist MCP Security Checklist */
+export interface SecurityCriterionResult {
+  id: string;
+  name: string;
+  priority: 'high' | 'medium' | 'low';
+  met: boolean;
+  reason?: string;
+}
+
+export interface SecurityScoreResult {
+  score: number;
+  grade: string;
+  max_points: number;
+  earned: number;
+  criteria: SecurityCriterionResult[];
+  checklist_url: string;
+}
+
+/** How tool output is presented in MCP Apps–capable clients (e.g. table, card, json) */
+export type OutputDisplay = 'json' | 'table' | 'card';
 
 export interface Tool {
   id: string;
@@ -29,8 +79,39 @@ export interface Tool {
   execution_type: ExecutionType;
   execution_config: Record<string, unknown>;
   context_fields?: string[];
+  output_display?: OutputDisplay;
+  /** If true, tool is read-only; gateways may block write operations (MCP security best practice). */
+  read_only_hint?: boolean;
+  /** If true, tool can modify/delete data; clients should require user confirmation (MCP security best practice). */
+  destructive_hint?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/** MCP Apps format: clients that support it render the widget; others use text fallback */
+export type MCPAppPayload =
+  | {
+      widget: 'table';
+      props: {
+        columns: { key: string; label: string }[];
+        rows: Record<string, unknown>[];
+      };
+    }
+  | {
+      widget: 'card';
+      props: {
+        content: string;
+        title?: string;
+      };
+    };
+
+export function isMCPAppOutput(output: unknown): output is { text?: string; _mcp_app: MCPAppPayload } {
+  return (
+    typeof output === 'object' &&
+    output !== null &&
+    '_mcp_app' in output &&
+    typeof (output as { _mcp_app: unknown })._mcp_app === 'object'
+  );
 }
 
 export interface Resource {

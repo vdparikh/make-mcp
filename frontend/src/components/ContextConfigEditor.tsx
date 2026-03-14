@@ -8,6 +8,7 @@ interface Props {
   serverId: string;
   configs: ContextConfig[];
   onConfigCreated: () => void;
+  onConfigDeleted: (id: string) => void;
 }
 
 const sourceTypes = [
@@ -24,7 +25,7 @@ const configTemplates: Record<string, string> = {
   custom: '{\n  "type": "custom",\n  "config": {}\n}',
 };
 
-export default function ContextConfigEditor({ serverId, configs, onConfigCreated }: Props) {
+export default function ContextConfigEditor({ serverId, configs, onConfigCreated, onConfigDeleted }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [sourceType, setSourceType] = useState('header');
@@ -80,9 +81,7 @@ export default function ContextConfigEditor({ serverId, configs, onConfigCreated
           This enables multi-tenant AI agents to safely operate with proper user context.
         </p>
         
-        <div style={{ 
-          background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.15), rgba(56, 189, 248, 0.08))',
-          border: '1px solid rgba(129, 140, 248, 0.3)',
+        <div className="info-box" style={{ 
           borderRadius: '8px',
           padding: '1rem',
         }}>
@@ -91,9 +90,9 @@ export default function ContextConfigEditor({ serverId, configs, onConfigCreated
             How It Works
           </h4>
           <ul style={{ color: '#e2e8f0', fontSize: '0.8125rem', margin: 0, paddingLeft: '1.25rem' }}>
-            <li>AI asks: <code style={{ color: '#a5f3fc', background: 'rgba(0,0,0,0.3)', padding: '0.125rem 0.375rem', borderRadius: '3px' }}>"Show me my invoices"</code></li>
-            <li>Context Engine extracts <code style={{ color: '#c4b5fd', background: 'rgba(0,0,0,0.3)', padding: '0.125rem 0.375rem', borderRadius: '3px' }}>user_id</code> from JWT/headers</li>
-            <li>Tool automatically receives: <code style={{ color: '#86efac', background: 'rgba(0,0,0,0.3)', padding: '0.125rem 0.375rem', borderRadius: '3px' }}>customer_id = current_user</code></li>
+            <li>AI asks: <code style={{ color: '#a5f3fc', background: 'rgb(0,0,0)', padding: '0.125rem 0.375rem', borderRadius: '3px' }}>"Show me my invoices"</code></li>
+            <li>Context Engine extracts <code style={{ color: '#c4b5fd', background: 'rgba(0,0,0)', padding: '0.125rem 0.375rem', borderRadius: '3px' }}>user_id</code> from JWT/headers</li>
+            <li>Tool automatically receives: <code style={{ color: '#86efac', background: 'rgba(0,0,0)', padding: '0.125rem 0.375rem', borderRadius: '3px' }}>customer_id = current_user</code></li>
             <li>No prompt engineering needed!</li>
           </ul>
         </div>
@@ -214,7 +213,7 @@ export default function ContextConfigEditor({ serverId, configs, onConfigCreated
         <div>
           {configs.map((cfg) => (
             <div key={cfg.id} className="tool-card">
-              <div className="tool-icon" style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}>
+              <div className="tool-icon" style={{ background: '#8b5cf6', color: 'white' }}>
                 <i className={`bi ${sourceTypes.find(t => t.value === cfg.source_type)?.icon || 'bi-gear'}`}></i>
               </div>
               <div className="tool-info">
@@ -225,6 +224,27 @@ export default function ContextConfigEditor({ serverId, configs, onConfigCreated
                 <div style={{ marginTop: '0.5rem' }}>
                   <span className="badge badge-primary">{cfg.source_type}</span>
                 </div>
+              </div>
+              <div className="tool-actions">
+                <button 
+                  className="btn btn-icon btn-secondary btn-sm"
+                  onClick={() => {
+                    setName(cfg.name);
+                    setSourceType(cfg.source_type);
+                    setConfig(JSON.stringify(cfg.config || {}, null, 2));
+                    setShowForm(true);
+                  }}
+                  data-tooltip="Edit"
+                >
+                  <i className="bi bi-pencil"></i>
+                </button>
+                <button 
+                  className="btn btn-icon btn-secondary btn-sm"
+                  onClick={() => onConfigDeleted(cfg.id)}
+                  data-tooltip="Delete"
+                >
+                  <i className="bi bi-trash"></i>
+                </button>
               </div>
             </div>
           ))}

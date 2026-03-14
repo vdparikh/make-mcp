@@ -13,8 +13,10 @@ A UI-driven platform to create **Model Context Protocol (MCP) servers** without 
 5. [3 Powerful Features](#3-powerful-features)
 6. [API Reference](#api-reference)
 7. [Creating Your First MCP Server](#creating-your-first-mcp-server)
-8. [Example: Location Lookup Tool](#example-location-lookup-tool)
-9. [Deployment](#deployment)
+8. [Verifying that your client invokes the server](#verifying-that-your-client-eg-cursor-invokes-the-server)
+9. [Example: Location Lookup Tool](#example-location-lookup-tool)
+10. [Deployment](#deployment)
+11. [Security Score](#security-score)
 
 ---
 
@@ -56,9 +58,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000
-
-**Note:** On first startup, a fully functional **Demo API Toolkit** server is automatically created with 8 working tools, sample resources, prompts, context configs, and policies. Use it as a model for building your own servers!
+Open http://localhost:3000. You will need to **log in** or **register**. On first run, a default demo user is created: **demo@example.com** / **demo123**. A **Demo API Toolkit** server is also seeded for that user with 8 tools, sample resources, prompts, context configs, and policies.
 
 ---
 
@@ -107,12 +107,15 @@ make-mcp/
 │   ├── cmd/server/main.go            # Entry point
 │   ├── internal/
 │   │   ├── api/handlers.go           # REST API handlers
-│   │   ├── database/database.go      # PostgreSQL + migrations
-│   │   ├── models/models.go          # Data models
-│   │   ├── generator/generator.go    # MCP server code generator
-│   │   ├── context/engine.go         # Context Engine (Feature 1)
-│   │   ├── governance/engine.go      # Policy Engine (Feature 2)
-│   │   └── healing/engine.go         # Self-Healing Engine (Feature 3)
+│   │   ├── auth/                     # JWT auth, login/register
+│   │   ├── database/                 # PostgreSQL + migrations + seed
+│   │   ├── models/                   # Data models
+│   │   ├── generator/                # MCP server code generator
+│   │   ├── context/                  # Context Engine
+│   │   ├── governance/               # Policy Engine
+│   │   ├── healing/                  # Self-Healing Engine
+│   │   ├── security/                 # Security score (SlowMist checklist)
+│   │   └── openapi/                  # OpenAPI import
 │   ├── go.mod
 │   └── Dockerfile
 │
@@ -120,25 +123,30 @@ make-mcp/
 │   ├── src/
 │   │   ├── pages/
 │   │   │   ├── Dashboard.tsx         # Server list
-│   │   │   ├── ServerEditor.tsx      # Server configuration
-│   │   │   └── Compositions.tsx      # Server composition
+│   │   │   ├── ServerEditor.tsx       # Server configuration
+│   │   │   ├── Compositions.tsx      # Server composition
+│   │   │   ├── Marketplace.tsx       # Browse published servers
+│   │   │   ├── Login.tsx, Register   # Auth
+│   │   │   └── ...
 │   │   ├── components/
-│   │   │   ├── ToolEditor.tsx        # Tool builder
-│   │   │   ├── ResourceEditor.tsx    # Resource builder
-│   │   │   ├── PromptEditor.tsx      # Prompt builder
-│   │   │   ├── ContextConfigEditor.tsx
-│   │   │   ├── PolicyEditor.tsx      # Governance policies
-│   │   │   ├── TestPlayground.tsx    # Live testing
-│   │   │   └── HealingDashboard.tsx  # Self-healing monitoring
-│   │   ├── services/api.ts           # API client
-│   │   ├── types/index.ts            # TypeScript types
-│   │   └── styles/App.css            # Styling
+│   │   │   ├── ToolEditor.tsx        # Tool builder (REST, CLI, Flow, etc.)
+│   │   │   ├── ResourceEditor.tsx, PromptEditor.tsx
+│   │   │   ├── ContextConfigEditor.tsx, PolicyEditor.tsx
+│   │   │   ├── TestPlayground.tsx    # Live testing (table/card output)
+│   │   │   └── HealingDashboard.tsx
+│   │   ├── services/api.ts
+│   │   ├── types/index.ts
+│   │   └── styles/App.css
 │   ├── package.json
 │   └── Dockerfile
 │
+├── docs/                             # Documentation
+│   ├── getting-started.md
+│   ├── creating-servers.md
+│   ├── compositions.md
+│   └── security-best-practices.md
 ├── docker-compose.yml
-├── Makefile
-└── getting_started.md
+└── Makefile
 ```
 
 ---
@@ -196,9 +204,11 @@ Create tools with multiple execution types:
 | `rest_api` | Call external REST APIs |
 | `graphql` | Execute GraphQL queries |
 | `webhook` | Send data to webhooks |
+| `cli` | Execute shell commands (e.g. kubectl, docker, terraform, aws) with an optional `allowed_commands` allowlist |
+| `database` | Execute SQL queries |
 | `javascript` | Run JavaScript code |
 | `python` | Run Python scripts |
-| `database` | Execute SQL queries |
+| `flow` | Visual pipeline: chain nodes (API, transform, etc.) and convert to a single tool |
 
 #### Authentication Configuration
 
@@ -264,12 +274,22 @@ Test tools before deployment:
 - View responses and errors
 - Get healing suggestions on failure
 
-### 4. Server Code Generation
+### 4. Server Code Generation & Deploy
 
-Export MCP servers as:
-- **ZIP package** - Node.js project ready to run
-- Docker container (coming soon)
-- Cloud deployment (coming soon)
+From the **Deploy** tab you can:
+- **Node.js** — Generate and download a ZIP (Node.js + TypeScript project). Includes `run-with-log.mjs` for verifying tool invocations.
+- **Docker** — Instructions and generated Dockerfile; run as non-root.
+- **GitHub** — Push the generated server to a GitHub repository (create or existing).
+- **Azure ACS** — Placeholder for future deploy-to-Azure option.
+
+### 5. Security Score
+
+Make MCP computes a **security score** (0–100%, grade A–F) for each server based on the [SlowMist MCP Security Checklist](https://github.com/slowmist/MCP-Security-Checklist).
+
+- **While building:** Open your server → **Security** in the left navigation. View the current score, grade, and a list of criteria (e.g. input validation, rate limiting, access control, CLI allowlist, tool hints). Address unmet items to improve the score.
+- **In the marketplace:** Published servers display their security score and grade on the card and in the inspector; the **Security** tab shows which checklist items the server satisfies.
+
+See [Security Best Practices](./security-best-practices.md) for the full mapping of practices to Make MCP features.
 
 ---
 
@@ -371,16 +391,35 @@ Automatically detect failures and suggest fixes.
 
 ## API Reference
 
+All `/api/servers`, `/api/tools`, `/api/resources`, `/api/prompts`, `/api/policies`, `/api/compositions`, and `/api/import/openapi` endpoints require **authentication** (Bearer token). Public: `/api/health`, `/api/auth/login`, `/api/auth/register`, `/api/marketplace` (read).
+
+### Auth
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register user |
+| POST | `/api/auth/login` | Login (returns JWT) |
+| GET | `/api/auth/me` | Current user (requires auth) |
+
 ### Servers
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/servers` | List all servers |
+| GET | `/api/servers` | List current user's servers |
 | POST | `/api/servers` | Create server |
 | GET | `/api/servers/:id` | Get server with tools/resources/prompts |
 | PUT | `/api/servers/:id` | Update server |
 | DELETE | `/api/servers/:id` | Delete server |
 | POST | `/api/servers/:id/generate` | Generate & download ZIP |
+| POST | `/api/servers/:id/github-export` | Push to GitHub |
+| POST | `/api/servers/:id/publish` | Publish version (marketplace) |
+| GET | `/api/servers/:id/versions` | List published versions |
+| GET | `/api/servers/:id/versions/:version` | Get version snapshot |
+| GET | `/api/servers/:id/versions/:version/download` | Download version ZIP |
+| GET | `/api/servers/:id/flows` | List flows (visual builder) |
+| GET | `/api/servers/:id/security-score` | Security score (SlowMist) |
+| GET | `/api/servers/:id/context-configs` | List context configs |
+| POST | `/api/servers/:id/context-configs` | Create context config |
 
 ### Tools
 
@@ -416,8 +455,27 @@ Automatically detect failures and suggest fixes.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/compositions` | List compositions |
+| GET | `/api/compositions` | List current user's compositions |
 | POST | `/api/compositions` | Create composition |
+| GET | `/api/compositions/:id` | Get composition |
+| PUT | `/api/compositions/:id` | Update composition |
+| DELETE | `/api/compositions/:id` | Delete composition |
+| POST | `/api/compositions/:id/export` | Export composition ZIP |
+
+### Marketplace (public read)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/marketplace` | List published public servers |
+| GET | `/api/marketplace/:id` | Get server + versions + security score |
+| GET | `/api/marketplace/:id/download` | Download latest version ZIP |
+
+### Import
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/import/openapi/preview` | Preview OpenAPI → tools (no auth) |
+| POST | `/api/import/openapi` | Import OpenAPI and create server (auth) |
 
 ---
 
@@ -425,24 +483,24 @@ Automatically detect failures and suggest fixes.
 
 ### Step 1: Create a Server
 
-1. Click **"New Server"** on the Dashboard
-2. Enter:
+1. Click **"New Server"** on the Dashboard (after logging in).
+2. In the modal, enter:
    - **Name:** `weather-service`
    - **Description:** `Weather and location tools for AI agents`
-3. Click **Create Server**
+   - **Version:** `1.0.0` (optional)
+3. Click **"Create Server"**. You are taken to the Server Editor.
 
 ### Step 2: Add a Tool
 
-1. Open the server and go to **Tools** tab
-2. Click **"Add Tool"**
-3. Configure:
+1. In the Server Editor left nav, open **Tools** and click **"Add Tool"**.
+2. Configure:
 
 **Basic Info:**
 - **Name:** `get_location_by_zip`
 - **Description:** `Get location details for a US zip code`
-- **Execution Type:** `REST API`
+- **Execution Type:** `rest_api` (REST API)
 
-**Input Schema:**
+**Input Schema** (Config tab): use the schema editor or paste:
 ```json
 {
   "type": "object",
@@ -456,16 +514,12 @@ Automatically detect failures and suggest fixes.
 }
 ```
 
-**Execution Config:**
-```json
-{
-  "url": "https://api.zippopotam.us/us/{{zip_code}}",
-  "method": "GET",
-  "headers": {}
-}
-```
+**Execution** (Config tab): set URL, method, and optional auth:
+- **URL:** `https://api.zippopotam.us/us/{{zip_code}}`
+- **Method:** `GET`
+- **Headers:** leave empty or add as needed (no auth for this public API)
 
-4. Click **Create Tool**
+3. Click **Save** (or **Create Tool** when creating).
 
 ### Step 3: Test the Tool
 
@@ -482,8 +536,8 @@ Automatically detect failures and suggest fixes.
 
 ### Step 4: Generate & Download
 
-1. Go to **Deploy** tab
-2. Click **"Download ZIP"**
+1. In the Server Editor left nav, open **Deploy**.
+2. Select **Node.js** and follow the instructions: click **"Generate & Download"** to get a ZIP.
 3. Extract and run:
 ```bash
 cd weather-service-mcp-server
@@ -501,11 +555,37 @@ Add to your MCP client config (Claude Desktop, Cursor, etc.):
   "mcpServers": {
     "weather-service": {
       "command": "node",
-      "args": ["/path/to/dist/server.js"]
+      "args": ["/path/to/weather-service-mcp-server/dist/server.js"]
     }
   }
 }
 ```
+
+To verify the client actually invokes your server, use **command** `node` and **args** `["/path/to/weather-service-mcp-server/run-with-log.mjs"]`, then run `tail -f mcp.log` in the server directory (see [Verifying that your client invokes the server](#verifying-that-your-client-eg-cursor-invokes-the-server)).
+
+### Verifying that your client (e.g. Cursor) invokes the server
+
+The client runs the server in the background, so you don't see console output and can't tell if tools are actually being called. Every **downloaded server** from Make MCP includes:
+
+1. **`run-with-log.mjs`** – a Node script that runs the server and writes every MCP event to `mcp.log`. Use **command** `node` and **args** `["/full/path/to/run-with-log.mjs"]` in your MCP config (do not use the `.sh` script as the command—clients that run `node` will fail on `.sh`).
+2. **README section** – "Verifying that your client (e.g. Cursor) invokes the server".
+
+**Quick check:**
+
+- In your MCP config set **command** to `node` and **args** to `["/full/path/to/your-server/run-with-log.mjs"]`.
+- In another terminal: `cd /path/to/your-server && tail -f mcp.log`.
+- In Cursor, ask the agent to use a tool (e.g. "Look up IP 8.8.8.8 using get_ip_info").
+- If you see lines like `Tool called: get_ip_info | args: ...` and `Tool get_ip_info completed in ...ms` in `mcp.log`, the platform is generating a valid MCP server and your client is invoking it correctly.
+
+**If Cursor’s AI says it “doesn’t have access” to your MCP tools:**  
+That means Cursor’s model is not calling your server (or isn’t being given your tools). Try:
+
+1. **Confirm the server is running** – In **Settings → MCP**, ensure your server (e.g. `demo-api-toolkit`) is **enabled** and shows no error. Restart Cursor after changing `mcp.json`.
+2. **Use a context where tools are available** – In Cursor, MCP tools are often available in **Composer** (agent) or when using the right chat mode. Open Composer and ask: “Use the get_ip_info tool to look up IP 8.8.8.8.”
+3. **Phrase the request so the model uses the tool** – Ask explicitly: “Call the get_ip_info MCP tool with argument ip_address 8.8.8.8” or “Use your get_ip_info tool to look up 8.8.8.8.”
+4. **Confirm with mcp.log** – If you use `run-with-log.mjs` and run `tail -f mcp.log`, you’ll see whether the server received a request. No new lines when you send a message means Cursor didn’t call your server.
+
+If the server is enabled and you’re in the right mode but the model still refuses to call it, that’s a Cursor product limitation. Your Make MCP–generated server is valid; the client just has to send requests to it.
 
 ---
 
@@ -519,7 +599,7 @@ Here's a complete example using the free [Zippopotam.us](https://api.zippopotam.
 |-------|-------|
 | **Name** | `get_location_by_zip` |
 | **Description** | `Get location details (city, state, coordinates) for a US zip code` |
-| **Execution Type** | `REST API` |
+| **Execution Type** | `rest_api` |
 
 ### Input Schema
 ```json
@@ -628,24 +708,46 @@ docker-compose up --build -d
 ## Database Schema
 
 ```sql
--- Core tables
-servers (id, name, description, version, auth_config, created_at, updated_at)
-tools (id, server_id, name, description, input_schema, output_schema, execution_type, execution_config, context_fields)
-resources (id, server_id, name, uri, mime_type, handler)
-prompts (id, server_id, name, description, template, arguments)
+-- Users & Auth
+users (id, email, name, password_hash, created_at, updated_at)
+
+-- Core
+servers (id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, auth_config, created_at, updated_at)
+tools (id, server_id, name, description, input_schema, output_schema, execution_type, execution_config, context_fields, output_display, read_only_hint, destructive_hint, created_at, updated_at)
+resources (id, server_id, name, uri, mime_type, handler, created_at, updated_at)
+prompts (id, server_id, name, description, template, arguments, created_at, updated_at)
 
 -- Context & Governance
-context_configs (id, server_id, name, source_type, config)
-policies (id, tool_id, name, description, enabled)
+context_configs (id, server_id, name, source_type, config, created_at, updated_at)
+policies (id, tool_id, name, description, enabled, created_at, updated_at)
 policy_rules (id, policy_id, type, config, priority, fail_action)
 
 -- Observability & Healing
-tool_executions (id, tool_id, server_id, input, output, error, status_code, duration_ms, success, healing_applied)
-healing_suggestions (id, tool_id, error_pattern, suggestion_type, suggestion, auto_apply, applied)
+tool_executions (id, tool_id, server_id, input, output, error, status_code, duration_ms, success, healing_applied, created_at)
+healing_suggestions (id, tool_id, error_pattern, suggestion_type, suggestion, auto_apply, applied, created_at)
+
+-- Versioning & Marketplace
+server_versions (id, server_id, version, release_notes, snapshot, published_by, published_at)
+
+-- Visual flows
+flows (id, server_id, name, description, nodes, edges, created_at, updated_at)
 
 -- Composition
-server_compositions (id, name, description, server_ids)
+server_compositions (id, name, description, server_ids, owner_id, created_at, updated_at)
 ```
+
+---
+
+## Security Score
+
+Make MCP computes a **security score** (0–100%, grade A–F) for every server using the [SlowMist MCP Security Checklist](https://github.com/slowmist/MCP-Security-Checklist).
+
+| Where | What you see |
+|-------|----------------|
+| **Server Editor → Security** | Current score, grade, and a checklist of criteria (e.g. input validation, rate limiting, access control, CLI allowlist). Unmet items show a short reason so you can improve the score. |
+| **Marketplace** | Each published server shows a score badge on the card. In the server inspector, the **Security** tab shows the full criteria list. |
+
+The score is based only on configuration we can evaluate (schemas, policies, hints, resources, versioning). For a full mapping of MCP security practices to Make MCP features, see [Security Best Practices](./security-best-practices.md).
 
 ---
 
@@ -654,8 +756,9 @@ server_compositions (id, name, description, server_ids)
 1. **Create your first server** - Follow the guide above
 2. **Add governance policies** - Protect sensitive tools
 3. **Configure context** - Enable multi-tenant AI agents
-4. **Monitor healing** - Watch for recurring errors
-5. **Compose servers** - Build complex AI workflows
+4. **Check your security score** - Use the **Security** tab in the server editor and address unmet criteria
+5. **Monitor healing** - Watch for recurring errors
+6. **Compose servers** - Build complex AI workflows
 
 ---
 

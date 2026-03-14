@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import type { Server, ContextConfig } from '../types';
+import type { Server, ContextConfig, ServerVersion, SecurityScoreResult } from '../types';
 import { 
   getServer, 
   updateServer, 
@@ -10,6 +10,12 @@ import {
   deleteResource,
   deletePrompt,
   getContextConfigs,
+  deleteContextConfig,
+  githubExport,
+  publishServer,
+  getServerVersions,
+  downloadServerVersion,
+  getSecurityScore,
 } from '../services/api';
 import ToolEditor from '../components/ToolEditor';
 import ResourceEditor from '../components/ResourceEditor';
@@ -19,7 +25,132 @@ import PolicyEditor from '../components/PolicyEditor';
 import TestPlayground from '../components/TestPlayground';
 import HealingDashboard from '../components/HealingDashboard';
 
-type TabType = 'general' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'testing' | 'healing' | 'deploy';
+type TabType = 'general' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'deploy' | 'versions';
+
+function serverSlug(name: string): string {
+  return name.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
+}
+
+function SecurityScorePanel({ serverId }: { serverId: string }) {
+  const [result, setResult] = useState<SecurityScoreResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getSecurityScore(serverId)
+      .then((data) => {
+        if (!cancelled) setResult(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.response?.data?.error || err.message || 'Failed to load security score');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [serverId]);
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <span className="spinner" style={{ width: 24, height: 24, borderWidth: 2 }}></span>
+          <p style={{ marginTop: '0.75rem' }}>Calculating security score…</p>
+        </div>
+      </div>
+    );
+  }
+  if (error || !result) {
+    return (
+      <div className="card">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)' }}>
+          <i className="bi bi-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
+          <p style={{ marginTop: '0.75rem' }}>{error || 'Unable to load security score'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const gradeColor =
+    result.grade === 'A' ? '#16a34a' :
+    result.grade === 'B' ? '#2563eb' :
+    result.grade === 'C' ? '#ca8a04' :
+    result.grade === 'D' ? '#ea580c' : '#dc2626';
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+        <div>
+          <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+            <i className="bi bi-shield-lock" style={{ marginRight: '0.75rem' }}></i>
+            Security Score
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>
+            Based on the <a href={result.checklist_url} target="_blank" rel="noopener noreferrer">SlowMist MCP Security Checklist</a>
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{
+            width: 72,
+            height: 72,
+            borderRadius: '50%',
+            background: `linear-gradient(135deg, ${gradeColor}22, ${gradeColor}44)`,
+            border: `3px solid ${gradeColor}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.75rem',
+            fontWeight: 700,
+            color: gradeColor,
+          }}>
+            {result.grade}
+          </div>
+          <div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>{result.score}%</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{result.earned} / {result.max_points} points</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ borderTop: '1px solid var(--card-border)', paddingTop: '1rem' }}>
+        <h4 style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>Checklist criteria</h4>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {result.criteria.map((c) => (
+            <li
+              key={c.id}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.5rem',
+                padding: '0.5rem 0',
+                borderBottom: '1px solid var(--card-border)',
+              }}
+            >
+              <i
+                className={c.met ? 'bi bi-check-circle-fill' : 'bi bi-x-circle'}
+                style={{ color: c.met ? '#16a34a' : 'var(--text-muted)', marginTop: '2px', flexShrink: 0 }}
+              />
+              <div>
+                <span style={{ fontWeight: 500 }}>{c.name}</span>
+                <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  ({c.priority})
+                </span>
+                {c.reason && !c.met && (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{c.reason}</div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+        Improve your score by addressing the unmet criteria above. When you publish, this score is shown in the marketplace.
+      </p>
+    </div>
+  );
+}
 
 export default function ServerEditor() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +165,49 @@ export default function ServerEditor() {
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editVersion, setEditVersion] = useState('');
+  const [editIcon, setEditIcon] = useState('bi-server');
+  
+  // Deploy state
+  type DeployType = 'nodejs' | 'docker' | 'github' | 'azure' | null;
+  const [selectedDeploy, setSelectedDeploy] = useState<DeployType>(null);
+  
+  // GitHub export state
+  const [showGitHubModal, setShowGitHubModal] = useState(false);
+  const [githubToken, setGithubToken] = useState('');
+  const [githubOwner, setGithubOwner] = useState('');
+  const [githubRepo, setGithubRepo] = useState('');
+  const [githubBranch, setGithubBranch] = useState('main');
+  const [githubCommitMsg, setGithubCommitMsg] = useState('');
+  const [githubCreateRepo, setGithubCreateRepo] = useState(false);
+  const [githubPrivate, setGithubPrivate] = useState(true);
+  const [githubExporting, setGithubExporting] = useState(false);
+  
+  // Publish & Versioning state
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishVersion, setPublishVersion] = useState('');
+  const [publishNotes, setPublishNotes] = useState('');
+  const [publishPublic, setPublishPublic] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [versions, setVersions] = useState<ServerVersion[]>([]);
+  const [showToolsTree, setShowToolsTree] = useState(true);
+  const [showResourcesTree, setShowResourcesTree] = useState(true);
+  const [showPromptsTree, setShowPromptsTree] = useState(true);
+  const [focusedToolId, setFocusedToolId] = useState<string | null>(null);
+  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+
+  // Clear tree selection when switching away from that section
+  useEffect(() => {
+    if (activeTab !== 'tools' && focusedToolId) {
+      setFocusedToolId(null);
+    }
+    if (activeTab !== 'resources' && selectedResourceId) {
+      setSelectedResourceId(null);
+    }
+    if (activeTab !== 'prompts' && selectedPromptId) {
+      setSelectedPromptId(null);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (id) {
@@ -49,9 +223,13 @@ export default function ServerEditor() {
       setEditName(data.name);
       setEditDescription(data.description);
       setEditVersion(data.version);
+      setEditIcon(data.icon || 'bi-server');
       
       const configs = await getContextConfigs(id!);
       setContextConfigs(configs);
+      
+      const versionList = await getServerVersions(id!);
+      setVersions(versionList);
     } catch (error) {
       toast.error('Failed to load server');
       navigate('/');
@@ -66,6 +244,7 @@ export default function ServerEditor() {
         name: editName,
         description: editDescription,
         version: editVersion,
+        icon: editIcon,
       });
       toast.success('Server updated');
       loadServer();
@@ -82,7 +261,7 @@ export default function ServerEditor() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${server?.name}-mcp-server.zip`;
+      a.download = `${server ? serverSlug(server.name) : 'mcp-server'}-mcp-server.zip`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -93,6 +272,98 @@ export default function ServerEditor() {
       toast.error('Failed to generate server');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const openPublishModal = () => {
+    const currentVersion = server?.latest_version || server?.version || '1.0.0';
+    const parts = currentVersion.split('.');
+    const minor = parseInt(parts[1] || '0', 10);
+    const suggestedVersion = `${parts[0]}.${minor + 1}.0`;
+    setPublishVersion(suggestedVersion);
+    setPublishNotes('');
+    setPublishPublic(server?.is_public || false);
+    setShowPublishModal(true);
+  };
+
+  const handlePublish = async () => {
+    if (!publishVersion.trim()) {
+      toast.error('Version is required');
+      return;
+    }
+
+    try {
+      setPublishing(true);
+      await publishServer(id!, {
+        version: publishVersion,
+        release_notes: publishNotes,
+        is_public: publishPublic,
+      });
+      toast.success(`Published version ${publishVersion}`);
+      setShowPublishModal(false);
+      loadServer();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || 'Failed to publish');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleDownloadVersion = async (version: string) => {
+    try {
+      const blob = await downloadServerVersion(id!, version);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${server ? serverSlug(server.name) : 'mcp-server'}-v${version}-mcp-server.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success(`Downloaded version ${version}`);
+    } catch (error) {
+      toast.error('Failed to download version');
+    }
+  };
+
+  const openGitHubModal = () => {
+    // Pre-fill repo name from server name
+    const repoName = server?.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-mcp-server';
+    setGithubRepo(repoName);
+    setGithubCommitMsg(`Initial MCP server export: ${server?.name}`);
+    setShowGitHubModal(true);
+  };
+
+  const handleGitHubExport = async () => {
+    if (!githubToken || !githubOwner || !githubRepo) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setGithubExporting(true);
+      const result = await githubExport(id!, {
+        token: githubToken,
+        owner: githubOwner,
+        repo: githubRepo,
+        branch: githubBranch,
+        commit_message: githubCommitMsg,
+        create_repo: githubCreateRepo,
+        private: githubPrivate,
+        description: server?.description || `MCP Server: ${server?.name}`,
+      });
+
+      toast.success(result.message);
+      setShowGitHubModal(false);
+      
+      // Open the repo in a new tab
+      window.open(result.repo_url, '_blank');
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || 'Failed to export to GitHub');
+    } finally {
+      setGithubExporting(false);
     }
   };
 
@@ -129,6 +400,17 @@ export default function ServerEditor() {
     }
   };
 
+  const handleDeleteContextConfig = async (configId: string) => {
+    if (!confirm('Delete this context configuration?')) return;
+    try {
+      await deleteContextConfig(configId);
+      toast.success('Context configuration deleted');
+      loadServer();
+    } catch (error) {
+      toast.error('Failed to delete context configuration');
+    }
+  };
+
   if (loading) {
     return (
       <div className="loading">
@@ -148,8 +430,10 @@ export default function ServerEditor() {
     { id: 'prompts', label: 'Prompts', icon: 'bi-chat-text' },
     { id: 'context', label: 'Context', icon: 'bi-person-badge' },
     { id: 'policies', label: 'Policies', icon: 'bi-shield-check' },
+    { id: 'security', label: 'Security', icon: 'bi-shield-lock' },
     { id: 'testing', label: 'Testing', icon: 'bi-play-circle' },
     { id: 'healing', label: 'Healing', icon: 'bi-bandaid' },
+    { id: 'versions', label: 'Versions', icon: 'bi-clock-history' },
     { id: 'deploy', label: 'Deploy', icon: 'bi-rocket-takeoff' },
   ];
 
@@ -157,275 +441,1287 @@ export default function ServerEditor() {
     <div>
       <div className="page-header">
         <div>
+          <nav style={{ marginBottom: '0.5rem' }}>
+            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+              Dashboard
+            </Link>
+            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
+            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>{server.name}</span>
+          </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button 
-              className="btn btn-icon btn-secondary"
-              onClick={() => navigate('/')}
-            >
-              <i className="bi bi-arrow-left"></i>
-            </button>
             <h1 className="page-title">{server.name}</h1>
-            <span className="badge badge-primary">v{server.version}</span>
+            <span className="badge badge-primary">v{server.latest_version || server.version}</span>
+            <span className={`status-badge ${server.status || 'draft'}`}>
+              <i className={`bi ${server.status === 'published' ? 'bi-check-circle-fill' : server.status === 'archived' ? 'bi-archive-fill' : 'bi-pencil-fill'}`}></i>
+              {server.status === 'published' ? 'Published' : server.status === 'archived' ? 'Archived' : 'Draft'}
+            </span>
+            {server.is_public && (
+              <span className="badge" style={{ background: '#dcfce7', color: '#15803d' }}>
+                <i className="bi bi-globe" style={{ marginRight: '4px' }}></i>
+                Public
+              </span>
+            )}
           </div>
-          <p className="page-subtitle" style={{ marginLeft: '2.75rem' }}>
+          <p className="page-subtitle">
             {server.description || 'No description'}
+            {server.downloads > 0 && (
+              <span style={{ marginLeft: '0.75rem', color: 'var(--text-muted)' }}>
+                <i className="bi bi-download" style={{ marginRight: '4px' }}></i>
+                {server.downloads} downloads
+              </span>
+            )}
           </p>
         </div>
-        <button 
-          className="btn btn-success" 
-          onClick={handleGenerate}
-          disabled={generating}
-        >
-          {generating ? (
-            <>
-              <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
-              Generating...
-            </>
-          ) : (
-            <>
-              <i className="bi bi-download"></i>
-              Generate & Download
-            </>
-          )}
-        </button>
-      </div>
-
-      <div className="tabs">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button 
+            className="btn btn-primary" 
+            onClick={openPublishModal}
           >
-            <i className={`bi ${tab.icon}`} style={{ marginRight: '0.5rem' }}></i>
-            {tab.label}
-            {tab.id === 'tools' && server.tools && (
-              <span className="badge badge-primary" style={{ marginLeft: '0.5rem' }}>
-                {server.tools.length}
-              </span>
-            )}
-            {tab.id === 'resources' && server.resources && (
-              <span className="badge badge-primary" style={{ marginLeft: '0.5rem' }}>
-                {server.resources.length}
-              </span>
-            )}
-            {tab.id === 'prompts' && server.prompts && (
-              <span className="badge badge-primary" style={{ marginLeft: '0.5rem' }}>
-                {server.prompts.length}
-              </span>
-            )}
+            <i className="bi bi-upload"></i>
+            Publish
           </button>
-        ))}
-      </div>
-
-      {activeTab === 'general' && (
-        <div className="card">
-          <h3 className="card-title" style={{ marginBottom: '1.5rem' }}>Server Configuration</h3>
-          
-          <div className="form-group">
-            <label className="form-label">Server Name</label>
-            <input
-              type="text"
-              className="form-control"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Description</label>
-            <textarea
-              className="form-control"
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Version</label>
-            <input
-              type="text"
-              className="form-control"
-              value={editVersion}
-              onChange={(e) => setEditVersion(e.target.value)}
-              placeholder="1.0.0"
-            />
-          </div>
-
-          <button className="btn btn-primary" onClick={handleUpdateServer}>
-            <i className="bi bi-check-lg"></i>
-            Save Changes
+          <button 
+            className="btn btn-success" 
+            onClick={handleGenerate}
+            disabled={generating}
+          >
+            {generating ? (
+              <>
+                <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
+                Generating...
+              </>
+            ) : (
+              <>
+                <i className="bi bi-download"></i>
+                Generate & Download
+              </>
+            )}
           </button>
         </div>
-      )}
+      </div>
 
-      {activeTab === 'tools' && (
-        <ToolEditor
-          serverId={id!}
-          tools={server.tools || []}
-          onToolCreated={loadServer}
-          onToolDeleted={handleDeleteTool}
-        />
-      )}
-
-      {activeTab === 'resources' && (
-        <ResourceEditor
-          serverId={id!}
-          resources={server.resources || []}
-          onResourceCreated={loadServer}
-          onResourceDeleted={handleDeleteResource}
-        />
-      )}
-
-      {activeTab === 'prompts' && (
-        <PromptEditor
-          serverId={id!}
-          prompts={server.prompts || []}
-          onPromptCreated={loadServer}
-          onPromptDeleted={handleDeletePrompt}
-        />
-      )}
-
-      {activeTab === 'context' && (
-        <ContextConfigEditor
-          serverId={id!}
-          configs={contextConfigs}
-          onConfigCreated={loadServer}
-        />
-      )}
-
-      {activeTab === 'policies' && (
-        <PolicyEditor
-          tools={server.tools || []}
-          onPolicyUpdated={loadServer}
-        />
-      )}
-
-      {activeTab === 'testing' && (
-        <TestPlayground
-          tools={server.tools || []}
-        />
-      )}
-
-      {activeTab === 'healing' && (
-        <HealingDashboard
-          tools={server.tools || []}
-        />
-      )}
-
-      {activeTab === 'deploy' && (
-        <div className="card">
-          <h3 className="card-title" style={{ marginBottom: '1.5rem' }}>
-            <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.75rem' }}></i>
-            Deploy Options
+      <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0,1fr)', gap: '1.5rem', alignItems: 'flex-start' }}>
+        <div className="card" style={{ padding: '1rem', position: 'sticky', top: 0 }}>
+          <h3 className="card-title" style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
+            <i className="bi bi-diagram-3" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+            Server navigation
           </h3>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
-            <div className="card" style={{ background: 'var(--dark-bg)', border: '1px solid var(--primary-color)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.75rem', color: 'var(--primary-color)' }}>
-                <i className="bi bi-file-earmark-zip"></i>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+            Focused view for <strong>{server.name}</strong>. Pick a section to configure this MCP server.
+          </p>
+          <div style={{ borderTop: '1px solid var(--card-border)', margin: '0.5rem 0 0.75rem 0' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            {tabs.map((tab) => {
+              const isTreeSection = tab.id === 'tools' || tab.id === 'resources' || tab.id === 'prompts';
+              const isActive = activeTab === tab.id;
+              const count =
+                tab.id === 'tools'
+                  ? server.tools?.length || 0
+                  : tab.id === 'resources'
+                  ? server.resources?.length || 0
+                  : tab.id === 'prompts'
+                  ? server.prompts?.length || 0
+                  : 0;
+              const expanded =
+                tab.id === 'tools'
+                  ? showToolsTree
+                  : tab.id === 'resources'
+                  ? showResourcesTree
+                  : tab.id === 'prompts'
+                  ? showPromptsTree
+                  : false;
+
+              const toggleExpanded = () => {
+                if (tab.id === 'tools') setShowToolsTree(!showToolsTree);
+                if (tab.id === 'resources') setShowResourcesTree(!showResourcesTree);
+                if (tab.id === 'prompts') setShowPromptsTree(!showPromptsTree);
+              };
+
+              return (
+                <div key={tab.id}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      borderRadius: '8px',
+                      border: 'none',
+                      padding: '0.45rem 0.6rem',
+                      background: isActive ? 'rgba(129, 140, 248, 0.15)' : 'transparent',
+                      color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      fontSize: '0.82rem',
+                      textAlign: 'left',
+                      transition: 'background 0.15s',
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                      {isTreeSection && count > 0 && (
+                        <i
+                          className={`bi ${expanded ? 'bi-caret-down-fill' : 'bi-caret-right-fill'}`}
+                          style={{ fontSize: '0.6rem' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpanded();
+                          }}
+                        ></i>
+                      )}
+                      {!isTreeSection && (
+                        <i
+                          className={`bi ${tab.icon}`}
+                          style={{ color: isActive ? 'var(--primary-color)' : 'var(--text-secondary)' }}
+                        ></i>
+                      )}
+                      {isTreeSection && (
+                        <i
+                          className={`bi ${tab.icon}`}
+                          style={{ color: isActive ? 'var(--primary-color)' : 'var(--text-secondary)' }}
+                        ></i>
+                      )}
+                      {tab.label}
+                    </span>
+                    {isTreeSection && count > 0 && (
+                      <span className="badge badge-primary">
+                        {count}
+                      </span>
+                    )}
+                  </button>
+
+                  {isTreeSection && expanded && count > 0 && (
+                    <div style={{ marginTop: '0.1rem', marginLeft: '1.5rem' }}>
+                      {tab.id === 'tools' &&
+                        server.tools?.map((tool) => (
+                          <button
+                            key={tool.id}
+                            type="button"
+                            onClick={() => {
+                              setFocusedToolId(tool.id);
+                              setActiveTab('tools');
+                            }}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              border: 'none',
+                              background: focusedToolId === tool.id ? 'rgba(129, 140, 248, 0.18)' : 'transparent',
+                              padding: '0.15rem 0.25rem',
+                              borderRadius: '4px',
+                              fontSize: '0.78rem',
+                              color: focusedToolId === tool.id ? 'var(--primary-color)' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {tool.name}
+                          </button>
+                        ))}
+                      {tab.id === 'resources' &&
+                        server.resources?.map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedResourceId(r.id);
+                              setActiveTab('resources');
+                            }}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              border: 'none',
+                              background: selectedResourceId === r.id ? 'rgba(129, 140, 248, 0.18)' : 'transparent',
+                              padding: '0.15rem 0.25rem',
+                              borderRadius: '4px',
+                              fontSize: '0.78rem',
+                              color: selectedResourceId === r.id ? 'var(--primary-color)' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {r.name}
+                          </button>
+                        ))}
+                      {tab.id === 'prompts' &&
+                        server.prompts?.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPromptId(p.id);
+                              setActiveTab('prompts');
+                            }}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              border: 'none',
+                              background: selectedPromptId === p.id ? 'rgba(129, 140, 248, 0.18)' : 'transparent',
+                              padding: '0.15rem 0.25rem',
+                              borderRadius: '4px',
+                              fontSize: '0.78rem',
+                              color: selectedPromptId === p.id ? 'var(--primary-color)' : 'var(--text-secondary)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          {activeTab === 'general' && (
+            <div className="card">
+              <h3 className="card-title" style={{ marginBottom: '1.5rem' }}>Server Configuration</h3>
+              
+              <div className="form-group">
+                <label className="form-label">Server Name</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
               </div>
-              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Download ZIP</h4>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                Download as a Node.js project ready to run
-              </p>
-              <button className="btn btn-primary btn-sm" onClick={handleGenerate}>
-                <i className="bi bi-download"></i>
-                Download
+
+              <div className="form-group">
+                <label className="form-label">Description</label>
+                <textarea
+                  className="form-control"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Version</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={editVersion}
+                  onChange={(e) => setEditVersion(e.target.value)}
+                  placeholder="1.0.0"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Server Icon</label>
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(12, 1fr)', 
+                  gap: '0.375rem',
+                  padding: '0.75rem',
+                  background: 'var(--dark-bg)',
+                  borderRadius: '8px'
+                }}>
+                  {[
+                    'bi-server', 'bi-cloud', 'bi-database', 'bi-globe', 'bi-robot', 'bi-cpu',
+                    'bi-terminal', 'bi-code-slash', 'bi-gear', 'bi-lightning', 'bi-shield-check', 'bi-graph-up',
+                    'bi-chat-dots', 'bi-envelope', 'bi-calendar', 'bi-file-text', 'bi-currency-dollar', 'bi-cart',
+                    'bi-person', 'bi-building', 'bi-box', 'bi-palette', 'bi-music-note', 'bi-camera'
+                  ].map((iconClass) => (
+                    <button
+                      key={iconClass}
+                      type="button"
+                      onClick={() => setEditIcon(iconClass)}
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '6px',
+                        border: editIcon === iconClass ? '2px solid var(--primary-color)' : '2px solid transparent',
+                        background: editIcon === iconClass ? 'var(--primary-light)' : 'var(--card-bg)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '1rem',
+                        color: editIcon === iconClass ? 'var(--primary-color)' : 'var(--text-secondary)',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <i className={`bi ${iconClass}`}></i>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button className="btn btn-primary" onClick={handleUpdateServer}>
+                <i className="bi bi-check-lg"></i>
+                Save Changes
               </button>
             </div>
+          )}
 
-            <div className="card" style={{ background: 'var(--dark-bg)', border: '1px solid var(--card-border)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.75rem', color: 'var(--text-muted)' }}>
-                <i className="bi bi-box-seam"></i>
+          {activeTab === 'tools' && (
+            <div>
+              <div style={{ 
+                marginBottom: '1rem', 
+                padding: '1rem', 
+                background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.15), rgba(56, 189, 248, 0.1))',
+                borderRadius: '12px',
+                border: '1px solid rgba(129, 140, 248, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '0.9375rem' }}>
+                    <i className="bi bi-diagram-3" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+                    Try the Visual Builder
+                  </h4>
+                  <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
+                    Build tool pipelines with drag-and-drop nodes - like Zapier or Langflow
+                  </p>
+                </div>
+                <button 
+                  className="btn btn-primary btn-sm"
+                  onClick={() => navigate(`/servers/${id}/flow`)}
+                >
+                  <i className="bi bi-box-arrow-up-right"></i>
+                  Open Visual Builder
+                </button>
               </div>
-              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Docker Image</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                Build and push Docker image
-              </p>
-              <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Coming Soon
-              </span>
+              <ToolEditor
+                serverId={id!}
+                tools={server.tools || []}
+                focusToolId={focusedToolId}
+                onToolCreated={loadServer}
+                onToolDeleted={handleDeleteTool}
+              />
             </div>
+          )}
 
-            <div className="card" style={{ background: 'var(--dark-bg)', border: '1px solid var(--card-border)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.75rem', color: 'var(--text-muted)' }}>
-                <i className="bi bi-cloud-upload"></i>
+          {activeTab === 'resources' && (
+            <ResourceEditor
+              serverId={id!}
+              resources={server.resources || []}
+              onResourceCreated={loadServer}
+              onResourceDeleted={handleDeleteResource}
+            />
+          )}
+
+          {activeTab === 'prompts' && (
+            <PromptEditor
+              serverId={id!}
+              prompts={server.prompts || []}
+              tools={server.tools || []}
+              onPromptCreated={loadServer}
+              onPromptDeleted={handleDeletePrompt}
+            />
+          )}
+
+          {activeTab === 'context' && (
+            <ContextConfigEditor
+              serverId={id!}
+              configs={contextConfigs}
+              onConfigCreated={loadServer}
+              onConfigDeleted={handleDeleteContextConfig}
+            />
+          )}
+
+          {activeTab === 'policies' && (
+            <PolicyEditor
+              tools={server.tools || []}
+              onPolicyUpdated={loadServer}
+            />
+          )}
+
+          {activeTab === 'security' && (
+            <SecurityScorePanel serverId={id!} />
+          )}
+
+          {activeTab === 'testing' && (
+            <TestPlayground
+              tools={server.tools || []}
+            />
+          )}
+
+          {activeTab === 'healing' && (
+            <HealingDashboard
+              tools={server.tools || []}
+            />
+          )}
+
+          {activeTab === 'versions' && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+                    <i className="bi bi-clock-history" style={{ marginRight: '0.75rem' }}></i>
+                    Version History
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+                    Published versions of this server
+                  </p>
+                </div>
+                <button className="btn btn-primary" onClick={openPublishModal}>
+                  <i className="bi bi-plus-lg"></i>
+                  Publish New Version
+                </button>
               </div>
-              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Cloud Deploy</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                Deploy to AWS, GCP, or Vercel
-              </p>
-              <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Coming Soon
-              </span>
+
+              {versions.length === 0 ? (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '3rem 1rem', 
+                  background: 'var(--background-secondary)',
+                  borderRadius: '8px',
+                }}>
+                  <i className="bi bi-archive" style={{ fontSize: '2.5rem', color: 'var(--text-muted)', marginBottom: '1rem', display: 'block' }}></i>
+                  <h4 style={{ marginBottom: '0.5rem' }}>No Published Versions</h4>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    Publish your first version to create a snapshot that can be downloaded from the marketplace.
+                  </p>
+                  <button className="btn btn-primary" onClick={openPublishModal}>
+                    <i className="bi bi-upload"></i>
+                    Publish First Version
+                  </button>
+                </div>
+              ) : (
+                <div className="version-list">
+                  {versions.map((version) => (
+                    <div key={version.id} className="version-item">
+                      <div className="version-info">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <span className="version-tag">v{version.version}</span>
+                          {version.version === server.latest_version && (
+                            <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Latest</span>
+                          )}
+                        </div>
+                        {version.release_notes && (
+                          <p className="version-notes">{version.release_notes}</p>
+                        )}
+                        <span className="version-date">
+                          Published {new Date(version.published_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                      <div className="version-actions">
+                        <button 
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleDownloadVersion(version.version)}
+                          data-tooltip="Download this version"
+                        >
+                          <i className="bi bi-download"></i>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          )}
 
-            <div className="card" style={{ background: 'var(--dark-bg)', border: '1px solid var(--card-border)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.75rem', color: 'var(--text-muted)' }}>
-                <i className="bi bi-github"></i>
-              </div>
-              <h4 style={{ marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>GitHub Export</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                Push to a GitHub repository
-              </p>
-              <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Coming Soon
-              </span>
+      {activeTab === 'deploy' && (
+        <div>
+          {/* Step 1: Select deployment type */}
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
+            <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>
+              <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.75rem' }}></i>
+              Deploy Your Server
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+              Choose how you want to deploy your MCP server
+            </p>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+              <button
+                onClick={() => setSelectedDeploy('nodejs')}
+                style={{
+                  padding: '1.5rem',
+                  background: selectedDeploy === 'nodejs' ? 'var(--primary-light)' : 'var(--dark-bg)',
+                  border: `2px solid ${selectedDeploy === 'nodejs' ? 'var(--primary-color)' : 'var(--card-border)'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', color: selectedDeploy === 'nodejs' ? 'var(--primary-color)' : 'var(--text-secondary)' }}>
+                  <i className="bi bi-filetype-js"></i>
+                </div>
+                <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>Node.js</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: 0 }}>
+                  Download & run locally
+                </p>
+              </button>
+
+              <button
+                onClick={() => setSelectedDeploy('docker')}
+                style={{
+                  padding: '1.5rem',
+                  background: selectedDeploy === 'docker' ? 'rgba(16, 185, 129, 0.1)' : 'var(--dark-bg)',
+                  border: `2px solid ${selectedDeploy === 'docker' ? 'var(--success-color)' : 'var(--card-border)'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', color: selectedDeploy === 'docker' ? 'var(--success-color)' : 'var(--text-secondary)' }}>
+                  <i className="bi bi-box-seam"></i>
+                </div>
+                <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>Docker</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: 0 }}>
+                  Containerized deployment
+                </p>
+              </button>
+
+              <button
+                onClick={() => setSelectedDeploy('github')}
+                style={{
+                  padding: '1.5rem',
+                  background: selectedDeploy === 'github' ? 'rgba(36, 41, 47, 0.1)' : 'var(--dark-bg)',
+                  border: `2px solid ${selectedDeploy === 'github' ? '#24292f' : 'var(--card-border)'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', color: selectedDeploy === 'github' ? '#24292f' : 'var(--text-secondary)' }}>
+                  <i className="bi bi-github"></i>
+                </div>
+                <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>GitHub</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: 0 }}>
+                  Push to repository
+                </p>
+              </button>
+
+              <button
+                onClick={() => setSelectedDeploy('azure')}
+                style={{
+                  padding: '1.5rem',
+                  background: selectedDeploy === 'azure' ? 'rgba(0, 120, 212, 0.1)' : 'var(--dark-bg)',
+                  border: `2px solid ${selectedDeploy === 'azure' ? '#0078d4' : 'var(--card-border)'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                }}
+              >
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', color: selectedDeploy === 'azure' ? '#0078d4' : 'var(--text-secondary)' }}>
+                  <i className="bi bi-cloud-upload"></i>
+                </div>
+                <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>Azure ACS</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: 0 }}>
+                  Deploy to Azure
+                </p>
+              </button>
             </div>
           </div>
 
-          <div style={{ marginTop: '2rem', padding: '1.25rem', background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.1), rgba(56, 189, 248, 0.05))', border: '1px solid rgba(129, 140, 248, 0.2)', borderRadius: '12px' }}>
-            <h4 style={{ marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
-              <i className="bi bi-play-circle" style={{ marginRight: '0.5rem', color: 'var(--success-color)' }}></i>
-              How to Run Your MCP Server
-            </h4>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-              <p style={{ marginBottom: '0.5rem' }}>After downloading, run these commands:</p>
-              <pre style={{ 
-                background: 'rgba(0, 0, 0, 0.4)', 
-                padding: '1rem', 
-                borderRadius: '8px',
-                overflow: 'auto',
-                fontSize: '0.8125rem',
-                color: '#a5f3fc',
-                margin: '0.5rem 0'
-              }}>
-{`cd ${server.name.replace(/\s+/g, '-').toLowerCase()}-mcp-server
+          {/* Step 2: Show instructions based on selection */}
+          {selectedDeploy === 'nodejs' && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+                    <i className="bi bi-filetype-js" style={{ marginRight: '0.75rem', color: 'var(--primary-color)' }}></i>
+                    Node.js Deployment
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+                    Download and run your server with Node.js
+                  </p>
+                </div>
+                <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+                  <i className="bi bi-download"></i>
+                  {generating ? 'Generating...' : 'Download ZIP'}
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                    <span style={{ 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: '24px', 
+                      height: '24px', 
+                      background: 'var(--primary-color)', 
+                      color: 'white', 
+                      borderRadius: '50%', 
+                      fontSize: '0.75rem',
+                      marginRight: '0.5rem'
+                    }}>1</span>
+                    Setup & Run
+                  </h4>
+                  <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#e5e7eb', margin: 0 }}>
+{`cd ${serverSlug(server.name)}-mcp-server
 npm install
 npm run build
 npm start`}
-              </pre>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '1.5rem', padding: '1.25rem', background: 'var(--dark-bg)', border: '1px solid var(--card-border)', borderRadius: '12px' }}>
-            <h4 style={{ marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
-              <i className="bi bi-terminal" style={{ marginRight: '0.5rem', color: 'var(--secondary-color)' }}></i>
-              MCP Client Configuration
-            </h4>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-              Add this to your MCP client (e.g., Claude Desktop, Cursor) config after building:
-            </p>
-            <pre style={{ 
-              background: 'rgba(0, 0, 0, 0.5)', 
-              padding: '1rem', 
-              borderRadius: '8px',
-              overflow: 'auto',
-              fontSize: '0.8125rem',
-              color: '#fde68a',
-              border: '1px solid rgba(253, 230, 138, 0.2)'
-            }}>
+                  </pre>
+                </div>
+                
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                    <h4 style={{ fontSize: '0.875rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                      <span style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        width: '24px', 
+                        height: '24px', 
+                        background: 'var(--primary-color)', 
+                        color: 'white', 
+                        borderRadius: '50%', 
+                        fontSize: '0.75rem',
+                        marginRight: '0.5rem'
+                      }}>2</span>
+                      Configure MCP Client
+                    </h4>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={() => {
+                        const slug = serverSlug(server.name);
+                        const config = JSON.stringify({
+                          mcpServers: {
+                            [slug]: {
+                              command: 'node',
+                              args: ['/path/to/your-server/run-with-log.mjs'],
+                            },
+                          },
+                        }, null, 2);
+                        navigator.clipboard.writeText(config).then(
+                          () => toast.success('MCP config copied to clipboard'),
+                          () => toast.error('Could not copy')
+                        );
+                      }}
+                    >
+                      <i className="bi bi-clipboard"></i> Copy
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                    Add to your Cursor or Claude Desktop <code>mcp.json</code> (replace path with your server folder):
+                  </p>
+                  <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#fde68a', margin: 0 }}>
 {`{
   "mcpServers": {
-    "${server.name.replace(/\s+/g, '-').toLowerCase()}": {
+    "${serverSlug(server.name)}": {
       "command": "node",
-      "args": ["/full/path/to/${server.name.replace(/\s+/g, '-').toLowerCase()}-mcp-server/dist/server.js"]
+      "args": ["/path/to/your-server/run-with-log.mjs"]
     }
   }
 }`}
-            </pre>
+                  </pre>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedDeploy === 'docker' && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+                    <i className="bi bi-box-seam" style={{ marginRight: '0.75rem', color: 'var(--success-color)' }}></i>
+                    Docker Deployment
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+                    Run in a container with Docker or Docker Compose
+                  </p>
+                </div>
+                <button className="btn btn-success" onClick={handleGenerate} disabled={generating}>
+                  <i className="bi bi-download"></i>
+                  {generating ? 'Generating...' : 'Download ZIP'}
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                    <span style={{ 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: '24px', 
+                      height: '24px', 
+                      background: 'var(--success-color)', 
+                      color: 'white', 
+                      borderRadius: '50%', 
+                      fontSize: '0.75rem',
+                      marginRight: '0.5rem'
+                    }}>1</span>
+                    Docker Compose (Recommended)
+                  </h4>
+                  <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#e5e7eb', margin: 0 }}>
+{`cd ${serverSlug(server.name)}-mcp-server
+
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your API keys
+nano .env
+
+# Start the container
+docker-compose up -d`}
+                  </pre>
+                </div>
+                
+                <div>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                    <span style={{ 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: '24px', 
+                      height: '24px', 
+                      background: 'var(--success-color)', 
+                      color: 'white', 
+                      borderRadius: '50%', 
+                      fontSize: '0.75rem',
+                      marginRight: '0.5rem'
+                    }}>2</span>
+                    Build & Run Directly
+                  </h4>
+                  <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#e5e7eb', margin: 0 }}>
+{`cd ${serverSlug(server.name)}-mcp-server
+
+# Build the image
+docker build -t ${serverSlug(server.name)}-mcp .
+
+# Run the container
+docker run -it --rm \\
+  -e API_KEY=your_key \\
+  ${serverSlug(server.name)}-mcp`}
+                  </pre>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--hover-bg)', borderRadius: '8px' }}>
+                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                  <i className="bi bi-info-circle" style={{ marginRight: '0.5rem', color: 'var(--secondary-color)' }}></i>
+                  What's Included
+                </h4>
+                <div style={{ display: 'flex', gap: '2rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  <span><i className="bi bi-check2" style={{ marginRight: '0.375rem', color: 'var(--success-color)' }}></i>Dockerfile</span>
+                  <span><i className="bi bi-check2" style={{ marginRight: '0.375rem', color: 'var(--success-color)' }}></i>docker-compose.yml</span>
+                  <span><i className="bi bi-check2" style={{ marginRight: '0.375rem', color: 'var(--success-color)' }}></i>.env.example</span>
+                  <span><i className="bi bi-check2" style={{ marginRight: '0.375rem', color: 'var(--success-color)' }}></i>.dockerignore</span>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '1.5rem' }}>
+                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                  <span style={{ 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    width: '24px', 
+                    height: '24px', 
+                    background: 'var(--success-color)', 
+                    color: 'white', 
+                    borderRadius: '50%', 
+                    fontSize: '0.75rem',
+                    marginRight: '0.5rem'
+                  }}>3</span>
+                  Configure MCP Client
+                </h4>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                  Add to your Claude Desktop or Cursor config:
+                </p>
+                <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#fde68a', margin: 0 }}>
+{`{
+  "mcpServers": {
+    "${serverSlug(server.name)}": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "${serverSlug(server.name)}-mcp"]
+    }
+  }
+}`}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {selectedDeploy === 'github' && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+                    <i className="bi bi-github" style={{ marginRight: '0.75rem' }}></i>
+                    GitHub Deployment
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+                    Push your server code directly to a GitHub repository
+                  </p>
+                </div>
+                <button className="btn btn-primary" onClick={openGitHubModal}>
+                  <i className="bi bi-github"></i>
+                  Push to GitHub
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                    What Happens
+                  </h4>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.8 }}>
+                    <li>Generates complete MCP server code</li>
+                    <li>Creates repository (if needed)</li>
+                    <li>Pushes all files to your branch</li>
+                    <li>Includes README with setup instructions</li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>
+                    Requirements
+                  </h4>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.8 }}>
+                    <li>GitHub Personal Access Token</li>
+                    <li>Token needs <code style={{ background: 'var(--hover-bg)', padding: '0.125rem 0.375rem', borderRadius: '4px' }}>repo</code> scope</li>
+                    <li>For new repos: <code style={{ background: 'var(--hover-bg)', padding: '0.125rem 0.375rem', borderRadius: '4px' }}>public_repo</code> or <code style={{ background: 'var(--hover-bg)', padding: '0.125rem 0.375rem', borderRadius: '4px' }}>repo</code></li>
+                  </ul>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--hover-bg)', borderRadius: '8px' }}>
+                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                  <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
+                  Pro Tip
+                </h4>
+                <p style={{ margin: 0, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  After pushing, you can set up GitHub Actions for CI/CD, or deploy directly to services like Railway, Render, or Fly.io.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {selectedDeploy === 'azure' && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <div>
+                  <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+                    <i className="bi bi-cloud-upload" style={{ marginRight: '0.75rem', color: '#0078d4' }}></i>
+                    Azure Container Service Deployment
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
+                    Build and deploy directly to Azure ACS via CI/CD pipeline
+                  </p>
+                </div>
+                <span style={{ 
+                  padding: '0.375rem 0.75rem',
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  color: 'var(--warning-color)',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600
+                }}>
+                  Coming Soon
+                </span>
+              </div>
+
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '3rem', 
+                background: 'var(--hover-bg)', 
+                borderRadius: '12px',
+                border: '2px dashed var(--card-border)'
+              }}>
+                <i className="bi bi-gear" style={{ fontSize: '3rem', color: 'var(--text-muted)', marginBottom: '1rem', display: 'block' }}></i>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Not Yet Implemented</h4>
+                <p style={{ color: 'var(--text-muted)', margin: 0, maxWidth: '400px', marginLeft: 'auto', marginRight: 'auto' }}>
+                  This feature will enable one-click deployment to Azure Container Service with automatic CI/CD pipeline setup.
+                </p>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--hover-bg)', borderRadius: '8px' }}>
+                <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
+                  <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
+                  Planned Features
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                  <span><i className="bi bi-circle" style={{ marginRight: '0.375rem', fontSize: '0.5rem' }}></i>Azure Container Registry integration</span>
+                  <span><i className="bi bi-circle" style={{ marginRight: '0.375rem', fontSize: '0.5rem' }}></i>Automated pipeline generation</span>
+                  <span><i className="bi bi-circle" style={{ marginRight: '0.375rem', fontSize: '0.5rem' }}></i>AKS deployment support</span>
+                  <span><i className="bi bi-circle" style={{ marginRight: '0.375rem', fontSize: '0.5rem' }}></i>Environment configuration</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!selectedDeploy && (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '3rem', 
+              background: 'var(--dark-bg)', 
+              borderRadius: '12px',
+              border: '2px dashed var(--card-border)'
+            }}>
+              <i className="bi bi-arrow-up-circle" style={{ fontSize: '2.5rem', color: 'var(--text-muted)', marginBottom: '1rem', display: 'block' }}></i>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+                Select a deployment method above to see instructions
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+        </div>
+      </div>
+
+      {/* GitHub Export Modal */}
+      {showGitHubModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowGitHubModal(false)}
+        >
+          <div 
+            style={{
+              background: 'var(--card-bg)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '550px',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid var(--card-border)'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.125rem' }}>
+                <i className="bi bi-github" style={{ marginRight: '0.5rem' }}></i>
+                Push to GitHub
+              </h3>
+              <button 
+                className="btn btn-icon btn-secondary"
+                onClick={() => setShowGitHubModal(false)}
+              >
+                <i className="bi bi-x-lg"></i>
+              </button>
+            </div>
+            <div style={{ padding: '1.25rem' }}>
+              <div className="form-group">
+                <label className="form-label">
+                  GitHub Personal Access Token *
+                  <a 
+                    href="https://github.com/settings/tokens/new?scopes=repo" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}
+                  >
+                    Create token
+                  </a>
+                </label>
+                <input
+                  type="password"
+                  className="form-control"
+                  value={githubToken}
+                  onChange={(e) => setGithubToken(e.target.value)}
+                  placeholder="ghp_xxxxxxxxxxxx"
+                />
+                <small style={{ color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                  Token needs <code>repo</code> scope for private repos
+                </small>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Owner / Organization *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={githubOwner}
+                    onChange={(e) => setGithubOwner(e.target.value)}
+                    placeholder="username or org"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Repository Name *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={githubRepo}
+                    onChange={(e) => setGithubRepo(e.target.value)}
+                    placeholder="my-mcp-server"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Branch</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={githubBranch}
+                  onChange={(e) => setGithubBranch(e.target.value)}
+                  placeholder="main"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Commit Message</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={githubCommitMsg}
+                  onChange={(e) => setGithubCommitMsg(e.target.value)}
+                  placeholder="Initial MCP server export"
+                />
+              </div>
+
+              <div style={{ 
+                background: 'var(--hover-bg)', 
+                borderRadius: '8px', 
+                padding: '1rem',
+                marginTop: '1rem'
+              }}>
+                <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={githubCreateRepo}
+                      onChange={(e) => setGithubCreateRepo(e.target.checked)}
+                      style={{ width: 18, height: 18 }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 500 }}>Create repository if it doesn't exist</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Will create a new repo under your account
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {githubCreateRepo && (
+                  <div className="form-group" style={{ marginBottom: 0, marginLeft: '2rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={githubPrivate}
+                        onChange={(e) => setGithubPrivate(e.target.checked)}
+                        style={{ width: 18, height: 18 }}
+                      />
+                      <span style={{ fontWeight: 500 }}>Make repository private</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '0.75rem',
+              padding: '1rem 1.25rem',
+              borderTop: '1px solid var(--card-border)'
+            }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowGitHubModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={handleGitHubExport}
+                disabled={githubExporting || !githubToken || !githubOwner || !githubRepo}
+              >
+                {githubExporting ? (
+                  <>
+                    <span className="spinner" style={{ width: 16, height: 16, marginRight: '0.5rem' }}></span>
+                    Pushing...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-github"></i>
+                    Push to GitHub
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Publish Modal */}
+      {showPublishModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+          }}
+          onClick={() => setShowPublishModal(false)}
+        >
+          <div 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '500px',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ 
+              padding: '1.25rem', 
+              borderBottom: '1px solid var(--card-border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <h3 style={{ margin: 0 }}>
+                <i className="bi bi-upload" style={{ marginRight: '0.75rem' }}></i>
+                Publish Version
+              </h3>
+              <button 
+                onClick={() => setShowPublishModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.25rem',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <i className="bi bi-x"></i>
+              </button>
+            </div>
+
+            <div style={{ padding: '1.25rem' }}>
+              <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '1.5rem' }}>
+                Publishing creates a snapshot of your server that can be downloaded from the marketplace.
+                Changes after publishing won't affect published versions.
+              </p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Version *</label>
+                <input
+                  type="text"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    boxSizing: 'border-box',
+                  }}
+                  value={publishVersion}
+                  onChange={(e) => setPublishVersion(e.target.value)}
+                  placeholder="e.g., 1.0.0"
+                />
+                <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                  Use semantic versioning (major.minor.patch)
+                </small>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>Release Notes</label>
+                <textarea
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '8px',
+                    fontSize: '1rem',
+                    resize: 'vertical',
+                    minHeight: '80px',
+                    boxSizing: 'border-box',
+                  }}
+                  rows={3}
+                  value={publishNotes}
+                  onChange={(e) => setPublishNotes(e.target.value)}
+                  placeholder="What's new in this version..."
+                />
+              </div>
+
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'flex-start', 
+                gap: '0.75rem', 
+                padding: '1rem',
+                background: 'var(--background-secondary)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+              }}
+              onClick={() => setPublishPublic(!publishPublic)}
+              >
+                <input
+                  type="checkbox"
+                  checked={publishPublic}
+                  onChange={(e) => setPublishPublic(e.target.checked)}
+                  style={{ width: 20, height: 20, marginTop: '2px', cursor: 'pointer' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 500 }}>Make public in marketplace</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Anyone can discover and download this server
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '0.75rem',
+              padding: '1rem 1.25rem',
+              borderTop: '1px solid var(--card-border)',
+              background: 'var(--background-secondary)',
+            }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={() => setShowPublishModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={handlePublish}
+                disabled={publishing || !publishVersion.trim()}
+              >
+                {publishing ? (
+                  <>
+                    <span className="spinner" style={{ width: 16, height: 16, marginRight: '0.5rem' }}></span>
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-upload"></i>
+                    Publish v{publishVersion}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
