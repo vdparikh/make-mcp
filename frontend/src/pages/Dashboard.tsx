@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import type { Server } from '../types';
-import { listServers, createServer, deleteServer } from '../services/api';
+import { listServers, createServer, createDemoServer, deleteServer } from '../services/api';
 import CreateServerModal from '../components/CreateServerModal';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -55,6 +55,16 @@ export default function Dashboard() {
       loadServers();
     } catch (error) {
       toast.error('Failed to create server');
+    }
+  };
+
+  const handleCreateDemoServer = async () => {
+    try {
+      await createDemoServer();
+      toast.success('Demo server created. Open it to explore tools, resources, and prompts.');
+      loadServers();
+    } catch (error) {
+      toast.error('Failed to create demo server');
     }
   };
 
@@ -136,11 +146,17 @@ export default function Dashboard() {
         <div className="empty-state">
           <i className="bi bi-server"></i>
           <h3>No servers yet</h3>
-          <p>Create your first MCP server to get started</p>
-          <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-            <i className="bi bi-plus-lg"></i>
-            Create Server
-          </button>
+          <p>Create your first MCP server to get started, or add the demo server to explore the system.</p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+              <i className="bi bi-plus-lg"></i>
+              Create Server
+            </button>
+            <button className="btn btn-secondary" onClick={handleCreateDemoServer}>
+              <i className="bi bi-box-seam"></i>
+              Create demo server
+            </button>
+          </div>
         </div>
       ) : (
         <div className="server-grid">

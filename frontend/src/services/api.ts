@@ -65,16 +65,73 @@ interface UserResponse {
   created_at: string;
 }
 
-// Auth APIs
-export const login = async (email: string, password: string): Promise<AuthResponse> => {
-  const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+// Auth APIs (passkey-only; no password)
+export const registerAccount = async (email: string, name: string): Promise<{ message: string; user: { id: string; email: string; name: string } }> => {
+  const { data } = await api.post<{ message: string; user: { id: string; email: string; name: string } }>('/auth/register', { email, name });
   return data;
 };
 
-export const register = async (email: string, name: string, password: string): Promise<AuthResponse> => {
-  const { data } = await api.post<AuthResponse>('/auth/register', { email, name, password });
+export const webauthnRegisterBegin = async (email: string): Promise<{ session_id: string; options: { publicKey: PublicKeyCredentialCreationOptionsJSON } }> => {
+  const { data } = await api.post<{ session_id: string; options: { publicKey: PublicKeyCredentialCreationOptionsJSON } }>('/auth/webauthn/register/begin', { email });
   return data;
 };
+
+export const webauthnRegisterFinish = async (sessionId: string, response: CredentialCreationResponseJSON): Promise<AuthResponse> => {
+  const { data } = await api.post<AuthResponse>('/auth/webauthn/register/finish', { session_id: sessionId, response });
+  return data;
+};
+
+export const webauthnLoginBegin = async (email: string): Promise<{ session_id: string; options: { publicKey: PublicKeyCredentialRequestOptionsJSON } }> => {
+  const { data } = await api.post<{ session_id: string; options: { publicKey: PublicKeyCredentialRequestOptionsJSON } }>('/auth/webauthn/login/begin', { email });
+  return data;
+};
+
+export const webauthnLoginFinish = async (sessionId: string, response: CredentialAssertionResponseJSON): Promise<AuthResponse> => {
+  const { data } = await api.post<AuthResponse>('/auth/webauthn/login/finish', { session_id: sessionId, response });
+  return data;
+};
+
+// Types for WebAuthn options (backend sends JSON with base64url challenge/user.id etc.)
+export interface PublicKeyCredentialCreationOptionsJSON {
+  rp: { name: string; id?: string };
+  user: { id: string; name: string; displayName: string };
+  challenge: string;
+  pubKeyCredParams: { type: string; alg: number }[];
+  timeout?: number;
+  attestation?: string;
+  authenticatorSelection?: Record<string, unknown>;
+}
+
+export interface PublicKeyCredentialRequestOptionsJSON {
+  challenge: string;
+  timeout?: number;
+  rpId?: string;
+  allowCredentials?: { type: string; id: string; transports?: string[] }[];
+  userVerification?: string;
+}
+
+export interface CredentialCreationResponseJSON {
+  id: string;
+  rawId: string;
+  type: string;
+  response: {
+    clientDataJSON: string;
+    attestationObject: string;
+    transports?: string[];
+  };
+}
+
+export interface CredentialAssertionResponseJSON {
+  id: string;
+  rawId: string;
+  type: string;
+  response: {
+    clientDataJSON: string;
+    authenticatorData: string;
+    signature: string;
+    userHandle: string | null;
+  };
+}
 
 export const getCurrentUser = async (): Promise<UserResponse> => {
   const { data } = await api.get<UserResponse>('/auth/me');
@@ -97,6 +154,11 @@ export const getServer = async (id: string): Promise<Server> => {
 
 export const createServer = async (server: Partial<Server>): Promise<Server> => {
   const { data } = await api.post<Server>('/servers', server);
+  return data;
+};
+
+export const createDemoServer = async (): Promise<Server> => {
+  const { data } = await api.post<Server>('/servers/demo');
   return data;
 };
 

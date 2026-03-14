@@ -1,5 +1,18 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { login as apiLogin, register as apiRegister, getCurrentUser } from '../services/api';
+import {
+  getCurrentUser,
+  registerAccount,
+  webauthnRegisterBegin,
+  webauthnRegisterFinish,
+  webauthnLoginBegin,
+  webauthnLoginFinish,
+} from '../services/api';
+import {
+  toCreationOptions,
+  toRequestOptions,
+  credentialCreationResponseToJSON,
+  credentialAssertionResponseToJSON,
+} from '../utils/webauthn';
 
 interface User {
   id: string;
@@ -13,8 +26,8 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, name: string, password: string) => Promise<void>;
+  login: (email: string) => Promise<void>;
+  register: (email: string, name: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -44,15 +57,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const response = await apiLogin(email, password);
+  const login = async (email: string) => {
+    const { session_id, options } = await webauthnLoginBegin(email);
+    const requestOptions = toRequestOptions(options.publicKey) as PublicKeyCredentialRequestOptions;
+    const cred = await navigator.credentials.get({ publicKey: requestOptions });
+    if (!cred || !(cred instanceof PublicKeyCredential)) {
+      throw new Error('Passkey sign-in was not completed');
+    }
+    const responseJson = credentialAssertionResponseToJSON(cred);
+    const response = await webauthnLoginFinish(session_id, responseJson);
     localStorage.setItem('token', response.token);
     setToken(response.token);
     setUser(response.user);
   };
 
-  const register = async (email: string, name: string, password: string) => {
-    const response = await apiRegister(email, name, password);
+  const register = async (email: string, name: string) => {
+    await registerAccount(email, name);
+    const { session_id, options } = await webauthnRegisterBegin(email);
+    const creationOptions = toCreationOptions(options.publicKey) as PublicKeyCredentialCreationOptions;
+    const cred = await navigator.credentials.create({ publicKey: creationOptions });
+    if (!cred || !(cred instanceof PublicKeyCredential)) {
+      throw new Error('Passkey creation was not completed');
+    }
+    const responseJson = credentialCreationResponseToJSON(cred);
+    const response = await webauthnRegisterFinish(session_id, responseJson);
     localStorage.setItem('token', response.token);
     setToken(response.token);
     setUser(response.user);

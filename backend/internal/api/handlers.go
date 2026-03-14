@@ -22,6 +22,8 @@ import (
 	"github.com/vdparikh/make-mcp/backend/internal/models"
 	"github.com/vdparikh/make-mcp/backend/internal/openapi"
 	"github.com/vdparikh/make-mcp/backend/internal/security"
+	webauthnlib "github.com/go-webauthn/webauthn/webauthn"
+	webauthnpkg "github.com/vdparikh/make-mcp/backend/internal/webauthn"
 )
 
 // Handler contains all API handlers
@@ -32,10 +34,12 @@ type Handler struct {
 	governance    *governance.Engine
 	healing       *healing.Engine
 	openapiParser *openapi.Parser
+	webauthn      *webauthnlib.WebAuthn
+	sessionStore  *webauthnpkg.SessionStore
 }
 
 // NewHandler creates a new API handler
-func NewHandler(db *database.DB) *Handler {
+func NewHandler(db *database.DB, wa *webauthnlib.WebAuthn, sessionStore *webauthnpkg.SessionStore) *Handler {
 	return &Handler{
 		db:            db,
 		generator:     generator.NewGenerator(),
@@ -43,6 +47,8 @@ func NewHandler(db *database.DB) *Handler {
 		governance:    governance.NewEngine(),
 		healing:       healing.NewEngine(),
 		openapiParser: openapi.NewParser(),
+		webauthn:      wa,
+		sessionStore:  sessionStore,
 	}
 }
 
@@ -54,7 +60,10 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		authGroup := api.Group("/auth")
 		{
 			authGroup.POST("/register", h.Register)
-			authGroup.POST("/login", h.Login)
+			authGroup.POST("/webauthn/register/begin", h.WebAuthnRegisterBegin)
+			authGroup.POST("/webauthn/register/finish", h.WebAuthnRegisterFinish)
+			authGroup.POST("/webauthn/login/begin", h.WebAuthnLoginBegin)
+			authGroup.POST("/webauthn/login/finish", h.WebAuthnLoginFinish)
 			authGroup.GET("/me", h.AuthMiddleware(), h.GetCurrentUser)
 		}
 
@@ -63,6 +72,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		{
 			servers.GET("", h.ListServers)
 			servers.POST("", h.CreateServer)
+			servers.POST("/demo", h.CreateDemoServer)
 			servers.GET("/:id", h.GetServer)
 			servers.PUT("/:id", h.UpdateServer)
 			servers.DELETE("/:id", h.DeleteServer)
@@ -250,6 +260,20 @@ func (h *Handler) CreateServer(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusCreated, server)
+}
+
+func (h *Handler) CreateDemoServer(c *gin.Context) {
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	server, err := h.db.CreateDemoServerForUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusCreated, server)
 }
 
@@ -2165,6 +2189,7 @@ func (h *Handler) ConvertFlowToTool(c *gin.Context) {
 
 // Auth handlers
 
+// Register creates a user account (email + name only). The client must then complete passkey registration via WebAuthn register/begin and register/finish to sign in.
 func (h *Handler) Register(c *gin.Context) {
 	var req models.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -2172,7 +2197,6 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	// Check if user already exists
 	existingUser, err := h.db.GetUserByEmail(c.Request.Context(), req.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
@@ -2183,67 +2207,15 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	// Hash password
-	passwordHash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
-		return
-	}
-
-	// Create user
-	user, err := h.db.CreateUser(c.Request.Context(), req.Email, req.Name, passwordHash)
+	user, err := h.db.CreateUser(c.Request.Context(), req.Email, req.Name, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
-	// Generate token
-	token, err := auth.GenerateToken(user.ID, user.Email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, models.AuthResponse{
-		Token: token,
-		User:  *user,
-	})
-}
-
-func (h *Handler) Login(c *gin.Context) {
-	var req models.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
-		return
-	}
-
-	// Find user
-	user, err := h.db.GetUserByEmail(c.Request.Context(), req.Email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
-		return
-	}
-	if user == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-		return
-	}
-
-	// Check password
-	if !auth.CheckPasswordHash(req.Password, user.PasswordHash) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
-		return
-	}
-
-	// Generate token
-	token, err := auth.GenerateToken(user.ID, user.Email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	c.JSON(http.StatusOK, models.AuthResponse{
-		Token: token,
-		User:  *user,
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Account created. Use passkey registration (webauthn/register/begin then register/finish) to add a passkey and sign in.",
+		"user":    user,
 	})
 }
 
@@ -2269,6 +2241,187 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 		Email:     user.Email,
 		Name:      user.Name,
 		CreatedAt: user.CreatedAt,
+	})
+}
+
+// WebAuthnRegisterBegin starts passkey registration: returns creation options and session_id.
+func (h *Handler) WebAuthnRegisterBegin(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email required"})
+		return
+	}
+	user, err := h.db.GetUserByEmail(c.Request.Context(), req.Email)
+	if err != nil || user == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user not found; register first with email and name"})
+		return
+	}
+	rows, err := h.db.GetWebAuthnCredentials(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load credentials"})
+		return
+	}
+	credData := make([][]byte, 0, len(rows))
+	for _, r := range rows {
+		credData = append(credData, r.Data)
+	}
+	waUser, err := webauthnpkg.NewWebAuthnUser(user, credData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	creation, session, err := h.webauthn.BeginRegistration(waUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "begin registration: " + err.Error()})
+		return
+	}
+	sessionID := uuid.New().String()
+	h.sessionStore.Set(sessionID, session)
+	// Return options in the format the frontend expects (CredentialCreationOptions)
+	c.JSON(http.StatusOK, gin.H{
+		"session_id": sessionID,
+		"options":    creation,
+	})
+}
+
+// WebAuthnRegisterFinish completes passkey registration and returns JWT.
+func (h *Handler) WebAuthnRegisterFinish(c *gin.Context) {
+	var req struct {
+		SessionID string          `json:"session_id" binding:"required"`
+		Response  json.RawMessage `json:"response" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id and response required"})
+		return
+	}
+	session := h.sessionStore.Get(req.SessionID)
+	if session == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired session"})
+		return
+	}
+	userID := string(session.UserID)
+	user, err := h.db.GetUserByID(c.Request.Context(), userID)
+	if err != nil || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+		return
+	}
+	rows, _ := h.db.GetWebAuthnCredentials(c.Request.Context(), user.ID)
+	credData := make([][]byte, 0, len(rows))
+	for _, r := range rows {
+		credData = append(credData, r.Data)
+	}
+	waUser, _ := webauthnpkg.NewWebAuthnUser(user, credData)
+	// Build a request that has the response in the body so the library can parse it
+	r := c.Request
+	r.Body = io.NopCloser(bytes.NewReader(req.Response))
+	r.ContentLength = int64(len(req.Response))
+	credential, err := h.webauthn.FinishRegistration(waUser, *session, r)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "verification failed: " + err.Error()})
+		return
+	}
+	credJSON, _ := json.Marshal(credential)
+	if err := h.db.SaveWebAuthnCredential(c.Request.Context(), user.ID, credential.ID, credJSON); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save credential"})
+		return
+	}
+	token, err := auth.GenerateToken(user.ID, user.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create session"})
+		return
+	}
+	c.JSON(http.StatusOK, models.AuthResponse{
+		Token: token,
+		User:  *user,
+	})
+}
+
+// WebAuthnLoginBegin starts passkey authentication: returns assertion options and session_id.
+func (h *Handler) WebAuthnLoginBegin(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email required"})
+		return
+	}
+	user, err := h.db.GetUserByEmail(c.Request.Context(), req.Email)
+	if err != nil || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "no account for this email"})
+		return
+	}
+	rows, err := h.db.GetWebAuthnCredentials(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load credentials"})
+		return
+	}
+	credData := make([][]byte, 0, len(rows))
+	for _, r := range rows {
+		credData = append(credData, r.Data)
+	}
+	waUser, err := webauthnpkg.NewWebAuthnUser(user, credData)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	assertion, session, err := h.webauthn.BeginLogin(waUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "begin login: " + err.Error()})
+		return
+	}
+	sessionID := uuid.New().String()
+	h.sessionStore.Set(sessionID, session)
+	c.JSON(http.StatusOK, gin.H{
+		"session_id": sessionID,
+		"options":    assertion,
+	})
+}
+
+// WebAuthnLoginFinish completes passkey authentication and returns JWT.
+func (h *Handler) WebAuthnLoginFinish(c *gin.Context) {
+	var req struct {
+		SessionID string          `json:"session_id" binding:"required"`
+		Response  json.RawMessage `json:"response" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id and response required"})
+		return
+	}
+	session := h.sessionStore.Get(req.SessionID)
+	if session == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired session"})
+		return
+	}
+	userID := string(session.UserID)
+	user, err := h.db.GetUserByID(c.Request.Context(), userID)
+	if err != nil || user == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+		return
+	}
+	rows, _ := h.db.GetWebAuthnCredentials(c.Request.Context(), user.ID)
+	credData := make([][]byte, 0, len(rows))
+	for _, r := range rows {
+		credData = append(credData, r.Data)
+	}
+	waUser, _ := webauthnpkg.NewWebAuthnUser(user, credData)
+	r := c.Request
+	r.Body = io.NopCloser(bytes.NewReader(req.Response))
+	r.ContentLength = int64(len(req.Response))
+	_, err = h.webauthn.FinishLogin(waUser, *session, r)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "verification failed: " + err.Error()})
+		return
+	}
+	token, err := auth.GenerateToken(user.ID, user.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create session"})
+		return
+	}
+	c.JSON(http.StatusOK, models.AuthResponse{
+		Token: token,
+		User:  *user,
 	})
 }
 
