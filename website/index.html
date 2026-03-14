@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Make MCP — Build MCP servers visually, no code required</title>
+  <meta name="description" content="Create plug-and-play Model Context Protocol (MCP) servers for AI agents, Cursor, and Claude through an intuitive UI. No code required.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Poppins & Outfit (match app) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="site-header">
+    <nav class="navbar navbar-expand-lg">
+      <div class="container">
+        <a class="navbar-brand logo" href="/">
+          <span class="logo-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <span class="logo-text">Make MCP</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="nav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-3 gap-lg-4">
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#features">Features</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#quick-start">Get Started</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp/tree/main/docs">Docs</a></li>
+            <li class="nav-item"><a class="nav-link nav-cta btn btn-outline-light btn-sm px-3" href="https://github.com/vdparikh/make-mcp"><i class="bi bi-github me-1"></i> GitHub</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-pattern" aria-hidden="true"></div>
+      <div class="hero-graphic" aria-hidden="true">
+        <div class="hero-mcp-icon"><i class="bi bi-diagram-3-fill"></i></div>
+      </div>
+      <div class="container position-relative">
+        <div class="row justify-content-center text-center">
+          <div class="col-lg-10">
+            <h1 class="hero-title">Build cross-platform MCP servers with a visual builder.<br>No code required.</h1>
+            <p class="hero-subtitle">Create plug-and-play Model Context Protocol servers for AI agents, IDEs like Cursor, and platforms like Claude Desktop through an intuitive UI.</p>
+            <div class="hero-ctas d-flex flex-wrap gap-3 justify-content-center">
+              <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary btn-lg px-4 py-3"><span>Get Started</span> <i class="bi bi-arrow-right ms-2"></i></a>
+              <a href="https://github.com/vdparikh/make-mcp#features" class="btn btn-outline-light btn-lg px-4 py-3">Why Make MCP?</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features - light section (Electron-style grid) -->
+    <section class="features-section">
+      <div class="container">
+        <h2 class="section-title">Powered by the visual builder</h2>
+        <p class="section-lead">Drag-and-drop interface, multiple execution types, and one-click export. Everything you need to ship MCP servers.</p>
+        <div class="row g-4">
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-grid-3x3-gap-fill"></i></div>
+              <h3 class="feature-title">Visual Server Builder</h3>
+              <p class="feature-desc">Create MCP servers through a drag-and-drop interface. Define tools, resources, and prompts without YAML or code.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-plug-fill"></i></div>
+              <h3 class="feature-title">Multiple Execution Types</h3>
+              <p class="feature-desc">REST API, GraphQL, Webhooks, <strong>CLI</strong> (kubectl, docker, terraform), Database, JavaScript, Python, and <strong>Visual Flow</strong> (pipeline → tool).</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-shield-lock-fill"></i></div>
+              <h3 class="feature-title">Built-in Authentication</h3>
+              <p class="feature-desc">API Key, Bearer Token, Basic Auth, OAuth 2.0 with visual configuration on each tool.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-play-circle-fill"></i></div>
+              <h3 class="feature-title">Live Testing Playground</h3>
+              <p class="feature-desc">Test tools with mock input before deployment. See results in tables or cards.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-download"></i></div>
+              <h3 class="feature-title">One-Click Export</h3>
+              <p class="feature-desc">Download as Node.js project, Docker image, or push to GitHub. Ready to run in Cursor or any MCP client.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-person-gear"></i></div>
+              <h3 class="feature-title">Context-Aware Execution</h3>
+              <p class="feature-desc">Auto-inject user identity, permissions, and org data into tool calls.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-sliders"></i></div>
+              <h3 class="feature-title">AI Governance Layer</h3>
+              <p class="feature-desc">Policy engine to control tool access: rate limits, allowed roles, time windows, and approvals.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-heart-pulse-fill"></i></div>
+              <h3 class="feature-title">Self-Healing Tools</h3>
+              <p class="feature-desc">Auto-detect failures and suggest fixes for your tool configurations.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-collection-fill"></i></div>
+              <h3 class="feature-title">Server Composition</h3>
+              <p class="feature-desc">Combine multiple MCP servers into one and export as a single config.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-shield-check"></i></div>
+              <h3 class="feature-title">Security Score</h3>
+              <p class="feature-desc">In-app score (0–100%, grade A–F) based on the SlowMist MCP Security Checklist; shown while building and in the marketplace.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-key-fill"></i></div>
+              <h3 class="feature-title">Passkey-Only Auth</h3>
+              <p class="feature-desc">Sign in with a passkey. No passwords. WebAuthn-based, secure by default.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4">
+            <div class="feature-card">
+              <div class="feature-icon"><i class="bi bi-file-earmark-code"></i></div>
+              <h3 class="feature-title">OpenAPI Import</h3>
+              <p class="feature-desc">Turn an OpenAPI spec into an MCP server in one step. Perfect for existing APIs.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Get your MCP server started (Electron Forge-style) -->
+    <section class="detail-section detail-section-alt">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-5">
+            <p class="detail-label">QUICK START</p>
+            <h2 class="detail-title">Get your MCP server started</h2>
+            <p class="detail-text">Make MCP is a batteries-included toolkit for building and publishing MCP servers. Create tools, resources, and prompts through the UI—then export as Node.js, Docker, or push to GitHub. First-class support for REST, CLI, Flow, and OpenAPI import.</p>
+            <div class="d-flex flex-wrap gap-3 mt-4">
+              <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-dark btn-lg px-4">Get started</a>
+              <a href="https://github.com/vdparikh/make-mcp" class="btn btn-outline-secondary btn-lg px-4">Source code</a>
+            </div>
+          </div>
+          <div class="col-lg-6 ms-auto">
+            <div class="terminal-block">
+              <div class="terminal-header">Terminal</div>
+              <pre class="terminal-body mb-0"><code><span class="term-prompt">$</span> git clone https://github.com/vdparikh/make-mcp.git
+<span class="term-ok">✔</span> Cloning repository
+<span class="term-prompt">$</span> cd make-mcp && docker-compose up --build
+<span class="term-ok">✔</span> Building backend and frontend
+<span class="term-ok">✔</span> Starting PostgreSQL
+<span class="term-ok">✔</span> Running at http://localhost:3000
+<span class="term-prompt">$</span> open http://localhost:3000
+<span class="term-ok">✔</span> Register with email + passkey, create your first server</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dashboard (image + text) -->
+    <section class="detail-section">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-5">
+            <p class="detail-label">CREATE & MANAGE</p>
+            <h2 class="detail-title">Dashboard</h2>
+            <p class="detail-text">Create and manage your MCP servers in one place. See total servers, published count, tools, and resources at a glance. Create a new server, import from OpenAPI, or add the demo server to explore the system.</p>
+            <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary mt-3">Get started</a>
+          </div>
+          <div class="col-lg-6 ms-auto">
+            <div class="detail-img-wrap shadow-lg rounded-3 overflow-hidden">
+              <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_1.png" alt="Make MCP Dashboard" class="img-fluid">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tool Builder (image left, text right) -->
+    <section class="detail-section detail-section-alt">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-6 order-lg-2">
+            <p class="detail-label">VISUAL EDITOR</p>
+            <h2 class="detail-title">Tool Builder</h2>
+            <p class="detail-text">Visual schema editor with execution types: REST API, GraphQL, Webhooks, CLI (kubectl, docker, terraform), Database, JavaScript, Python, and Visual Flow. Configure auth, input/output schemas, and security hints per tool.</p>
+            <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary mt-3">Try it</a>
+          </div>
+          <div class="col-lg-5 order-lg-1 me-auto">
+            <div class="detail-img-wrap shadow-lg rounded-3 overflow-hidden">
+              <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_2.png" alt="Tool Builder" class="img-fluid">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Testing Playground (text left, image right) -->
+    <section class="detail-section">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-5">
+            <p class="detail-label">TEST BEFORE DEPLOY</p>
+            <h2 class="detail-title">Testing Playground</h2>
+            <p class="detail-text">Test tools with mock input before deployment. Run requests from the UI and see results in raw JSON, or use table and card layouts for a richer preview. CLI tools show a mock indicator so you know what runs in production.</p>
+            <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary mt-3">Get started</a>
+          </div>
+          <div class="col-lg-6 ms-auto">
+            <div class="detail-img-wrap shadow-lg rounded-3 overflow-hidden">
+              <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_3.png" alt="Testing Playground" class="img-fluid">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security Score (image left, text right) -->
+    <section class="detail-section detail-section-alt">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-6 order-lg-2">
+            <p class="detail-label">BEST PRACTICES</p>
+            <h2 class="detail-title">Security Score</h2>
+            <p class="detail-text">In-app score (0–100%, grade A–F) based on the SlowMist MCP Security Checklist. See which criteria you meet—input validation, tool hints, rate limiting, RBAC—and improve before publishing. The score is shown in the marketplace for published servers.</p>
+            <a href="https://github.com/vdparikh/make-mcp/blob/main/docs/security-best-practices.md" class="btn btn-primary mt-3">Security docs</a>
+          </div>
+          <div class="col-lg-5 order-lg-1 me-auto">
+            <div class="detail-img-wrap shadow-lg rounded-3 overflow-hidden">
+              <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_5.png" alt="Security Score" class="img-fluid">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Download and Deploy (text left, image right) -->
+    <section class="detail-section">
+      <div class="container">
+        <div class="row align-items-center g-5">
+          <div class="col-lg-5">
+            <p class="detail-label">SHIP IT</p>
+            <h2 class="detail-title">Download and Deploy</h2>
+            <p class="detail-text">Generate and download your server as a Node.js project (ZIP with run-with-log script), get Docker instructions, or push directly to GitHub. Deploy to Node, Docker, or cloud. Configure your MCP client (e.g. Cursor) and start using your tools.</p>
+            <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary mt-3">Deploy guide</a>
+          </div>
+          <div class="col-lg-6 ms-auto">
+            <div class="detail-img-wrap shadow-lg rounded-3 overflow-hidden">
+              <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_4.png" alt="Download and Deploy" class="img-fluid">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Works with / Trusted by -->
+    <section class="works-with">
+      <div class="container">
+        <h2 class="section-title">Works with the tools you use</h2>
+        <p class="section-lead">Generated MCP servers run anywhere the Model Context Protocol is supported.</p>
+        <div class="row g-4 justify-content-center align-items-center text-center">
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">Cursor</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">Claude Desktop</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">VS Code</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">ChatGPT</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">Any MCP client</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Get started -->
+    <section class="get-started">
+      <div class="container">
+        <h2 class="section-title">Get started in minutes</h2>
+        <p class="section-lead">Run with Docker. Sign up with email and a passkey — no password.</p>
+        <div class="row justify-content-center">
+          <div class="col-lg-8">
+            <div class="code-block">
+              <pre class="mb-0"><code>git clone https://github.com/vdparikh/make-mcp.git
+cd make-mcp
+docker-compose up --build</code></pre>
+            </div>
+            <p class="get-started-note mt-3">Open <strong>http://localhost:3000</strong>, register with your email, create a passkey, then create your first server or add the demo server to explore.</p>
+            <div class="text-center mt-4">
+              <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary btn-lg px-4">Full setup guide</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="footer-cta">
+      <div class="container text-center">
+        <h2 class="section-title mb-2">Ready to build?</h2>
+        <p class="text-white-50 mb-4">Open source. Go, React, PostgreSQL.</p>
+        <a href="https://github.com/vdparikh/make-mcp" class="btn btn-primary btn-lg px-4"><i class="bi bi-github me-2"></i>View on GitHub</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 py-4">
+        <div class="d-flex flex-wrap gap-4">
+          <a href="https://github.com/vdparikh/make-mcp">GitHub</a>
+          <a href="https://github.com/vdparikh/make-mcp#features">Features</a>
+          <a href="https://github.com/vdparikh/make-mcp/tree/main/docs">Documentation</a>
+          <a href="https://modelcontextprotocol.io/">MCP</a>
+        </div>
+        <p class="footer-copy mb-0">Make MCP — Build MCP servers visually. No code required.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
