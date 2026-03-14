@@ -33,6 +33,7 @@
 - **Self-Healing Tools** — Auto-detect failures and suggest fixes
 - **Server Composition** — Combine multiple MCP servers into one
 - **Security Score** — In-app score (0–100%, grade A–F) based on the [SlowMist MCP Security Checklist](https://github.com/slowmist/MCP-Security-Checklist); shown while building and in the marketplace
+- **OpenAPI Import** — Turn an OpenAPI spec into an MCP server in one step; paste or upload, and each path becomes a tool
 
 ## Quick Start
 
@@ -95,29 +96,7 @@ After signing in, create a new server from the dashboard. You can add tools (RES
 | `get_country_info` | Country details |
 | `get_secure_customer_data` | Context injection demo |
 
-## Screenshots
-
-### Dashboard
-Create and manage your MCP servers in one place.
-![Image 1](docs/images/image_1.png) 
-
-### Tool Builder
-Visual schema editor with execution types: REST, GraphQL, CLI, Flow, Database, and more.
-![Image 1](docs/images/image_2.png) 
-
-### Testing Playground
-Test tools with mock input before deployment.
-![Image 1](docs/images/image_3.png) 
-
-### Security Score
-![Image 5](docs/images/image_5.png) 
-
-### Download and Deploy
-![Image 1](docs/images/image_4.png) 
-
-### Governance Policies
-Define rules to control AI tool access.
-
+Screenshots and feature walkthroughs are on the [project website](https://vdparikh.github.io/make-mcp/).
 
 ## 3 Powerful Features
 
