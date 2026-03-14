@@ -15,6 +15,9 @@
   Create plug-and-play MCP servers for AI agents, IDEs like Cursor, and platforms like Claude Desktop through an intuitive UI.
 </p>
 
+<p align="center">
+  <a href="https://vdparikh.github.io/make-mcp/">Project website</a> · <a href="https://github.com/vdparikh/make-mcp">GitHub</a>
+</p>
 
 ---
 
