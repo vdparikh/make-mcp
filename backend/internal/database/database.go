@@ -182,11 +182,21 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 			id UUID PRIMARY KEY,
 			email VARCHAR(255) UNIQUE NOT NULL,
 			name VARCHAR(255) NOT NULL,
-			password_hash VARCHAR(255) NOT NULL,
+			password_hash VARCHAR(255),
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 			updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+		`DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'users' AND column_name = 'password_hash' AND is_nullable = 'NO') THEN ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL; END IF; END $$`,
+		`CREATE TABLE IF NOT EXISTS webauthn_credentials (
+			id UUID PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			credential_id BYTEA NOT NULL,
+			data JSONB NOT NULL,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+			UNIQUE(credential_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id)`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft'`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS published_at TIMESTAMP WITH TIME ZONE`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS latest_version VARCHAR(50)`,
@@ -211,41 +221,6 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 	for _, m := range migrations {
 		if _, err := db.pool.Exec(ctx, m); err != nil {
 			return fmt.Errorf("running migration: %w", err)
-		}
-	}
-
-	// Create default admin user if no users exist
-	if err := db.createDefaultUser(ctx); err != nil {
-		return fmt.Errorf("creating default user: %w", err)
-	}
-
-	return nil
-}
-
-func (db *DB) createDefaultUser(ctx context.Context) error {
-	var count int
-	err := db.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
-	if err != nil {
-		return err
-	}
-
-	if count == 0 {
-		fmt.Println("Creating default admin user")
-		// Default password: "admin123" - bcrypt hash
-		// Users should change this after first login
-		defaultPasswordHash := "$2a$10$ValkYKH6D1gfpzCaRYX4tu/wS/VrMBtTpQZqJCqWnxNUWUN5Lq/gS"
-
-		_, err = db.pool.Exec(ctx,
-			`INSERT INTO users (id, email, name, password_hash, created_at, updated_at) 
-			 VALUES ($1, $2, $3, $4, NOW(), NOW())
-			 ON CONFLICT (email) DO NOTHING`,
-			uuid.New().String(),
-			"admin@makemcp.local",
-			"Admin",
-			defaultPasswordHash,
-		)
-		if err != nil {
-			return err
 		}
 	}
 
@@ -1110,7 +1085,7 @@ func (db *DB) CreateUser(ctx context.Context, email, name, passwordHash string) 
 	_, err := db.pool.Exec(ctx,
 		`INSERT INTO users (id, email, name, password_hash, created_at, updated_at) 
 		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		user.ID, user.Email, user.Name, user.PasswordHash, user.CreatedAt, user.UpdatedAt)
+		user.ID, user.Email, user.Name, nullIfEmpty(passwordHash), user.CreatedAt, user.UpdatedAt)
 
 	if err != nil {
 		return nil, fmt.Errorf("inserting user: %w", err)
@@ -1121,11 +1096,12 @@ func (db *DB) CreateUser(ctx context.Context, email, name, passwordHash string) 
 
 func (db *DB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	var user models.User
+	var passwordHash *string
 
 	err := db.pool.QueryRow(ctx,
 		`SELECT id, email, name, password_hash, created_at, updated_at 
 		 FROM users WHERE email = $1`, email).
-		Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Email, &user.Name, &passwordHash, &user.CreatedAt, &user.UpdatedAt)
 
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -1133,17 +1109,20 @@ func (db *DB) GetUserByEmail(ctx context.Context, email string) (*models.User, e
 	if err != nil {
 		return nil, fmt.Errorf("querying user: %w", err)
 	}
-
+	if passwordHash != nil {
+		user.PasswordHash = *passwordHash
+	}
 	return &user, nil
 }
 
 func (db *DB) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	var user models.User
+	var passwordHash *string
 
 	err := db.pool.QueryRow(ctx,
 		`SELECT id, email, name, password_hash, created_at, updated_at 
 		 FROM users WHERE id = $1`, id).
-		Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+		Scan(&user.ID, &user.Email, &user.Name, &passwordHash, &user.CreatedAt, &user.UpdatedAt)
 
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -1151,8 +1130,41 @@ func (db *DB) GetUserByID(ctx context.Context, id string) (*models.User, error) 
 	if err != nil {
 		return nil, fmt.Errorf("querying user: %w", err)
 	}
-
+	if passwordHash != nil {
+		user.PasswordHash = *passwordHash
+	}
 	return &user, nil
+}
+
+// WebAuthnCredentialRow is a row from webauthn_credentials for loading.
+type WebAuthnCredentialRow struct {
+	CredentialID []byte
+	Data         []byte
+}
+
+func (db *DB) SaveWebAuthnCredential(ctx context.Context, userID string, credentialID []byte, data []byte) error {
+	_, err := db.pool.Exec(ctx,
+		`INSERT INTO webauthn_credentials (id, user_id, credential_id, data) VALUES ($1, $2, $3, $4)`,
+		uuid.New().String(), userID, credentialID, data)
+	return err
+}
+
+func (db *DB) GetWebAuthnCredentials(ctx context.Context, userID string) ([]WebAuthnCredentialRow, error) {
+	rows, err := db.pool.Query(ctx,
+		`SELECT credential_id, data FROM webauthn_credentials WHERE user_id = $1`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WebAuthnCredentialRow
+	for rows.Next() {
+		var row WebAuthnCredentialRow
+		if err := rows.Scan(&row.CredentialID, &row.Data); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
 }
 
 // Server Version operations

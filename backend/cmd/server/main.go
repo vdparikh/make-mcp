@@ -12,6 +12,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/vdparikh/make-mcp/backend/internal/api"
 	"github.com/vdparikh/make-mcp/backend/internal/database"
+	webauthnpkg "github.com/vdparikh/make-mcp/backend/internal/webauthn"
 )
 
 func main() {
@@ -72,7 +73,13 @@ func main() {
 		c.Next()
 	})
 
-	handler := api.NewHandler(db)
+	wa, err := webauthnpkg.NewWebAuthn()
+	if err != nil {
+		log.Fatalf("Failed to init WebAuthn: %v", err)
+	}
+	sessionStore := webauthnpkg.NewSessionStore(5 * time.Minute)
+
+	handler := api.NewHandler(db, wa, sessionStore)
 	handler.RegisterRoutes(r)
 
 	r.GET("/", func(c *gin.Context) {

@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/vdparikh/make-mcp/backend/internal/auth"
 )
 
 // nullUUID returns nil for empty string so NULL can be stored in UUID columns.
@@ -19,77 +17,9 @@ func nullUUID(s string) *string {
 	return &s
 }
 
-// SeedDemoData creates initial demo data if the database is empty
+// SeedDemoData no longer creates users or demo data; auth is passkey-only.
+// First user registers with email + name, then adds a passkey via WebAuthn.
 func (db *DB) SeedDemoData(ctx context.Context) error {
-	// Check if any servers exist
-	var count int
-	err := db.pool.QueryRow(ctx, "SELECT COUNT(*) FROM servers").Scan(&count)
-	if err != nil {
-		return fmt.Errorf("checking server count: %w", err)
-	}
-
-	if count > 0 {
-		log.Println("Database already has data, skipping seed")
-		return nil
-	}
-
-	log.Println("Seeding demo data...")
-	now := time.Now()
-
-	// Ensure a default user exists so the demo server can be owned
-	var defaultUserID string
-	var userCount int
-	if err := db.pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&userCount); err != nil {
-		return fmt.Errorf("checking users: %w", err)
-	}
-	if userCount == 0 {
-		defaultUserID = uuid.New().String()
-		hash, err := auth.HashPassword("demo123")
-		if err != nil {
-			return fmt.Errorf("hashing default password: %w", err)
-		}
-		_, err = db.pool.Exec(ctx, `
-			INSERT INTO users (id, email, name, password_hash, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6)
-		`, defaultUserID, "demo@example.com", "Demo User", hash, now, now)
-		if err != nil {
-			return fmt.Errorf("creating default user: %w", err)
-		}
-		log.Println("Created default user: demo@example.com / demo123")
-	}
-
-	// Create demo server (owned by default user if we just created one)
-	serverID := uuid.New().String()
-	_, err = db.pool.Exec(ctx, `
-		INSERT INTO servers (id, name, description, version, owner_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, serverID, "Demo API Toolkit", "A fully functional demo MCP server showcasing location lookup, weather info, and utility tools. Use this as a model for building your own servers.", "1.0.0", nullUUID(defaultUserID), now, now)
-
-	if err != nil {
-		return fmt.Errorf("creating demo server: %w", err)
-	}
-
-	// Create demo tools
-	if err := db.seedDemoTools(ctx, serverID, now); err != nil {
-		return fmt.Errorf("seeding tools: %w", err)
-	}
-
-	// Create demo resources
-	if err := db.seedDemoResources(ctx, serverID, now); err != nil {
-		return fmt.Errorf("seeding resources: %w", err)
-	}
-
-	// Create demo prompts
-	if err := db.seedDemoPrompts(ctx, serverID, now); err != nil {
-		return fmt.Errorf("seeding prompts: %w", err)
-	}
-
-	// Create demo context configs
-	if err := db.seedDemoContextConfigs(ctx, serverID, now); err != nil {
-		return fmt.Errorf("seeding context configs: %w", err)
-	}
-
-	log.Println("Demo data seeded successfully!")
 	return nil
 }
 

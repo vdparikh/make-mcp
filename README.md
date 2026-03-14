@@ -47,7 +47,7 @@ cd make-mcp
 docker-compose up --build
 ```
 
-Open http://localhost:3000. **Log in** with the default user **demo@example.com** / **demo123** (created on first run).
+Open http://localhost:3000. **Sign up** with your email and name, then create a **passkey** (no password). Use the same passkey to sign in next time.
 
 ### Manual Setup
 
@@ -71,11 +71,15 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and log in with **demo@example.com** / **demo123** (created on first run).
+Open http://localhost:3000. **Register** with email and name, then add a **passkey** to sign in (passwordless).
 
-## Demo Server
+## Authentication
 
-On first startup, a default user and a **Demo API Toolkit** server are created (for that user) with 8 working tools:
+Sign-in is **passkey-only** (WebAuthn). There are no passwords. Register with email and name, then create a passkey; use that passkey to sign in on this and supported devices.
+
+## Creating Your First Server
+
+After signing in, create a new server from the dashboard. You can add tools (REST, CLI, Flow, etc.), resources, and prompts, then generate and download the MCP server. Example tools you can add:
 
 | Tool | Description |
 |------|-------------|

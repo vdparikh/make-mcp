@@ -350,15 +350,14 @@ type User struct {
 }
 
 // Auth request/response types
+// LoginRequest is unused; login is passkey-only via WebAuthn login/begin and login/finish.
 type LoginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Email string `json:"email" binding:"required,email"`
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Name     string `json:"name" binding:"required"`
-	Password string `json:"password" binding:"required,min=6"`
+	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required"`
 }
 
 type AuthResponse struct {
