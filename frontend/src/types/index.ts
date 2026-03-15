@@ -24,6 +24,7 @@ export interface Server {
   downloads: number;
   security_score?: number;
   security_grade?: string;
+  observability_reporting_key?: string;
   created_at: string;
   updated_at: string;
   tools?: Tool[];
@@ -180,6 +181,9 @@ export interface ToolExecution {
   server_id: string;
   tool_name?: string;
   source?: string;
+  client_user_id?: string;
+  client_agent?: string;
+  client_token?: string;
   input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   error?: string;
@@ -216,6 +220,19 @@ export interface RepairSuggestionItem {
 export interface ObservabilitySummaryResponse {
   reporting_key?: string;
   endpoint_url?: string;
+  recent_events: ToolExecution[];
+  latency_by_tool: ToolLatencyStat[];
+  failures_by_tool: ToolFailureStat[];
+  repair_suggestions: RepairSuggestionItem[];
+}
+
+export interface ServerSummary {
+  id: string;
+  name: string;
+}
+
+export interface ObservabilityDashboardResponse {
+  servers: ServerSummary[];
   recent_events: ToolExecution[];
   latency_by_tool: ToolLatencyStat[];
   failures_by_tool: ToolFailureStat[];

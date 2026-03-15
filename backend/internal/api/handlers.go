@@ -90,7 +90,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			servers.POST("/:id/observability/enable", h.EnableServerObservability)
 		}
 
-		// Observability ingestion: called by generated MCP servers at runtime (key-based auth, no JWT)
+		// Observability: dashboard (auth) and ingestion (key-based, no JWT)
+		api.GET("/observability", h.AuthMiddleware(), h.GetObservability)
 		api.POST("/observability/events", h.IngestObservabilityEvents)
 
 		marketplace := api.Group("/marketplace")
@@ -1387,6 +1388,9 @@ func (h *Handler) IngestObservabilityEvents(c *gin.Context) {
 			ServerID:         server.ID,
 			ToolName:         ev.ToolName,
 			Source:           "runtime",
+			ClientUserID:     strings.TrimSpace(ev.ClientUserID),
+			ClientAgent:      strings.TrimSpace(ev.ClientAgent),
+			ClientToken:      strings.TrimSpace(ev.ClientToken),
 			DurationMs:       ev.DurationMs,
 			Success:          ev.Success,
 			Error:            ev.Error,
@@ -1489,6 +1493,95 @@ func (h *Handler) GetServerObservability(c *gin.Context) {
 		RepairSuggestions:  repairSuggestions,
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// GetObservability returns runtime events and stats for the current user, with optional server_id and tool_name filters.
+func (h *Handler) GetObservability(c *gin.Context) {
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	serverID := strings.TrimSpace(c.Query("server_id"))
+	toolName := strings.TrimSpace(c.Query("tool_name"))
+	clientUserID := strings.TrimSpace(c.Query("client_user_id"))
+	clientAgent := strings.TrimSpace(c.Query("client_agent"))
+	limit := 200
+	if l := c.Query("limit"); l != "" {
+		if n, err := fmt.Sscanf(l, "%d", &limit); n == 1 && err == nil && limit > 0 && limit <= 500 {
+			// use parsed limit
+		} else {
+			limit = 200
+		}
+	}
+	ctx := c.Request.Context()
+	servers, err := h.db.ListServers(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	serverSummaries := make([]models.ServerSummary, 0, len(servers))
+	for _, s := range servers {
+		serverSummaries = append(serverSummaries, models.ServerSummary{ID: s.ID, Name: s.Name})
+	}
+	events, err := h.db.ListRuntimeExecutionsForUser(ctx, userID, serverID, toolName, clientUserID, clientAgent, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	latencyByTool := make(map[string]*models.ToolLatencyStat)
+	failuresByTool := make(map[string]*models.ToolFailureStat)
+	var repairSuggestions []models.RepairSuggestionItem
+	for i := range events {
+		e := &events[i]
+		toolKey := e.ToolName
+		if toolKey == "" {
+			toolKey = e.ToolID
+		}
+		if stat, ok := latencyByTool[toolKey]; ok {
+			stat.Count++
+			stat.AvgMs = (stat.AvgMs*float64(stat.Count-1) + float64(e.DurationMs)) / float64(stat.Count)
+			if e.DurationMs > stat.P95Ms {
+				stat.P95Ms = e.DurationMs
+			}
+		} else {
+			latencyByTool[toolKey] = &models.ToolLatencyStat{ToolName: e.ToolName, ToolID: e.ToolID, Count: 1, AvgMs: float64(e.DurationMs), P95Ms: e.DurationMs}
+		}
+		if !e.Success {
+			if f, ok := failuresByTool[toolKey]; ok {
+				f.Count++
+				if e.Error != "" {
+					f.LastError = e.Error
+				}
+			} else {
+				failuresByTool[toolKey] = &models.ToolFailureStat{ToolName: e.ToolName, ToolID: e.ToolID, Count: 1, LastError: e.Error}
+			}
+			if e.RepairSuggestion != "" {
+				repairSuggestions = append(repairSuggestions, models.RepairSuggestionItem{
+					ToolName: e.ToolName, ToolID: e.ToolID, Suggestion: e.RepairSuggestion, CreatedAt: e.CreatedAt,
+				})
+			}
+		}
+	}
+	latencyList := make([]models.ToolLatencyStat, 0, len(latencyByTool))
+	for _, s := range latencyByTool {
+		latencyList = append(latencyList, *s)
+	}
+	failureList := make([]models.ToolFailureStat, 0, len(failuresByTool))
+	for _, f := range failuresByTool {
+		failureList = append(failureList, *f)
+	}
+	sort.Slice(repairSuggestions, func(i, j int) bool { return repairSuggestions[j].CreatedAt.Before(repairSuggestions[i].CreatedAt) })
+	if len(repairSuggestions) > 20 {
+		repairSuggestions = repairSuggestions[:20]
+	}
+	c.JSON(http.StatusOK, models.ObservabilityDashboardResponse{
+		Servers:           serverSummaries,
+		RecentEvents:      events,
+		LatencyByTool:     latencyList,
+		FailuresByTool:    failureList,
+		RepairSuggestions: repairSuggestions,
+	})
 }
 
 // EnableServerObservability generates or returns the reporting key and shows env vars for the generated server.

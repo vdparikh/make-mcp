@@ -206,10 +206,6 @@ function ObservabilityPanel({ serverId }: { serverId: string }) {
   }
 
   const hasKey = data?.reporting_key;
-  const events = data?.recent_events ?? [];
-  const latency = data?.latency_by_tool ?? [];
-  const failures = data?.failures_by_tool ?? [];
-  const suggestions = data?.repair_suggestions ?? [];
 
   return (
     <div>
@@ -218,10 +214,10 @@ function ObservabilityPanel({ serverId }: { serverId: string }) {
           <div>
             <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
               <i className="bi bi-graph-up" style={{ marginRight: '0.75rem' }}></i>
-              Runtime observability
+              Enable runtime observability
             </h3>
             <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>
-              Tool calls, latency, failures, and repair suggestions from your MCP server when it runs in Cursor, Claude, or any client.
+              Send tool calls, latency, and failures from this server to the Observability dashboard when it runs in Cursor, Claude, or any MCP client.
             </p>
           </div>
           {!hasKey && (
@@ -239,125 +235,23 @@ function ObservabilityPanel({ serverId }: { serverId: string }) {
               MCP_OBSERVABILITY_KEY={data.reporting_key}
             </pre>
             <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              After setting these and restarting the server, tool calls will appear here.
+              After setting these and restarting the server, tool calls will appear in the Observability dashboard. Optionally set <code>MCP_OBSERVABILITY_USER_ID</code> and <code>MCP_OBSERVABILITY_CLIENT_AGENT</code> (e.g. Cursor, Claude Desktop) so you can see who and which client each call came from when many users share the same MCP.
+            </p>
+            <p style={{ marginTop: '0.5rem' }}>
+              <Link to={`/observability?server_id=${serverId}`} className="btn btn-secondary btn-sm">
+                <i className="bi bi-graph-up" style={{ marginRight: '0.5rem' }}></i>
+                View observability dashboard
+              </Link>
             </p>
           </div>
         )}
       </div>
 
-      {events.length > 0 && (
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-            <i className="bi bi-list-ul" style={{ marginRight: '0.5rem' }}></i>
-            Recent tool calls
-          </h4>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Tool</th>
-                  <th>Time</th>
-                  <th>Latency</th>
-                  <th>Status</th>
-                  <th>Error / Suggestion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.slice(0, 50).map((e) => (
-                  <tr key={e.id}>
-                    <td>{e.tool_name || e.tool_id}</td>
-                    <td>{new Date(e.created_at).toLocaleString()}</td>
-                    <td>{e.duration_ms} ms</td>
-                    <td>
-                      {e.success ? (
-                        <span style={{ color: 'var(--success)' }}><i className="bi bi-check-circle" /> OK</span>
-                      ) : (
-                        <span style={{ color: 'var(--danger)' }}><i className="bi bi-x-circle" /> Failed</span>
-                      )}
-                    </td>
-                    <td style={{ fontSize: '0.85rem' }}>
-                      {e.error && <span style={{ color: 'var(--danger)' }}>{e.error}</span>}
-                      {e.repair_suggestion && (
-                        <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
-                          <i className="bi bi-lightbulb" /> {e.repair_suggestion}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {(latency.length > 0 || failures.length > 0) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-          {latency.length > 0 && (
-            <div className="card">
-              <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-                <i className="bi bi-speedometer2" style={{ marginRight: '0.5rem' }}></i>
-                Latency by tool
-              </h4>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {latency.map((s) => (
-                  <li key={s.tool_id || s.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
-                    <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                      {s.count} calls · avg {Math.round(s.avg_ms)} ms · max {s.p95_ms} ms
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {failures.length > 0 && (
-            <div className="card">
-              <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-                <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.5rem' }}></i>
-                Failures by tool
-              </h4>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {failures.map((f) => (
-                  <li key={f.tool_id || f.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
-                    <div style={{ fontWeight: 500 }}>{f.tool_name || f.tool_id}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--danger)' }}>{f.count} failure(s)</div>
-                    {f.last_error && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{f.last_error}</div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {suggestions.length > 0 && (
-        <div className="card">
-          <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-            <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem' }}></i>
-            Repair suggestions
-          </h4>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {suggestions.map((s, i) => (
-              <li key={i} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)' }}>
-                <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
-                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{s.suggestion}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                  {new Date(s.created_at).toLocaleString()}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {!hasKey && events.length === 0 && !loading && (
+      {!hasKey && !loading && (
         <div className="card">
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
             <i className="bi bi-graph-up" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}></i>
-            <p>Enable reporting and set the env vars in your deployed MCP server to see tool calls, latency, and repair suggestions here.</p>
+            <p>Enable reporting above, then set the env vars in your deployed MCP server. View all tool calls, latency, failures, and repair suggestions on the <Link to="/observability" style={{ color: 'var(--primary-color)' }}>Observability</Link> page.</p>
           </div>
         </div>
       )}
@@ -383,6 +277,7 @@ export default function ServerEditor() {
   // Deploy state
   type DeployType = 'nodejs' | 'docker' | 'github' | 'azure' | null;
   const [selectedDeploy, setSelectedDeploy] = useState<DeployType>(null);
+  const [showDeployModal, setShowDeployModal] = useState(false);
   
   // GitHub export state
   const [showGitHubModal, setShowGitHubModal] = useState(false);
@@ -648,7 +543,6 @@ export default function ServerEditor() {
     { id: 'healing', label: 'Healing', icon: 'bi-bandaid' },
     { id: 'observability', label: 'Observability', icon: 'bi-graph-up' },
     { id: 'versions', label: 'Versions', icon: 'bi-clock-history' },
-    { id: 'deploy', label: 'Deploy', icon: 'bi-rocket-takeoff' },
   ];
 
   return (
@@ -696,20 +590,10 @@ export default function ServerEditor() {
           </button>
           <button 
             className="btn btn-success" 
-            onClick={handleGenerate}
-            disabled={generating}
+            onClick={() => setShowDeployModal(true)}
           >
-            {generating ? (
-              <>
-                <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
-                Generating...
-              </>
-            ) : (
-              <>
-                <i className="bi bi-download"></i>
-                Generate & Download
-              </>
-            )}
+            <i className="bi bi-rocket-takeoff"></i>
+            Deploy
           </button>
         </div>
       </div>
@@ -1140,18 +1024,52 @@ export default function ServerEditor() {
             </div>
           )}
 
-      {activeTab === 'deploy' && (
-        <div>
+      {/* Deploy Modal */}
+      {showDeployModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowDeployModal(false)}
+        >
+          <div
+            style={{
+              background: 'var(--card-bg)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '900px',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+              position: 'relative',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', borderBottom: '1px solid var(--card-border)' }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.5rem' }}></i>
+                Deploy Your Server
+              </h2>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setShowDeployModal(false)} aria-label="Close">
+                <i className="bi bi-x-lg"></i>
+              </button>
+            </div>
+            <div style={{ padding: '1.25rem' }}>
           {/* Step 1: Select deployment type */}
           <div className="card" style={{ marginBottom: '1.5rem' }}>
-            <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>
-              <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.75rem' }}></i>
-              Deploy Your Server
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', marginTop: 0 }}>
               Choose how you want to deploy your MCP server
             </p>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
               <button
                 onClick={() => setSelectedDeploy('nodejs')}
@@ -1305,14 +1223,20 @@ npm start`}
                       className="btn btn-sm btn-outline-primary"
                       onClick={() => {
                         const slug = serverSlug(server.name);
-                        const config = JSON.stringify({
-                          mcpServers: {
-                            [slug]: {
-                              command: 'node',
-                              args: ['/path/to/your-server/run-with-log.mjs'],
-                            },
-                          },
-                        }, null, 2);
+                        const serverEntry: Record<string, unknown> = {
+                          command: 'node',
+                          args: ['/path/to/your-server/run-with-log.mjs'],
+                        };
+                        if (server.observability_reporting_key) {
+                          serverEntry.env = {
+                            MCP_OBSERVABILITY_ENDPOINT: `${window.location.origin}/api/observability/events`,
+                            MCP_OBSERVABILITY_KEY: server.observability_reporting_key,
+                            MCP_OBSERVABILITY_USER_ID: '',
+                            MCP_OBSERVABILITY_CLIENT_AGENT: 'Cursor',
+                            MCP_OBSERVABILITY_USER_TOKEN: '',
+                          };
+                        }
+                        const config = JSON.stringify({ mcpServers: { [slug]: serverEntry } }, null, 2);
                         navigator.clipboard.writeText(config).then(
                           () => toast.success('MCP config copied to clipboard'),
                           () => toast.error('Could not copy')
@@ -1326,14 +1250,23 @@ npm start`}
                     Add to your Cursor or Claude Desktop <code>mcp.json</code> (replace path with your server folder):
                   </p>
                   <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#fde68a', margin: 0 }}>
-{`{
-  "mcpServers": {
-    "${serverSlug(server.name)}": {
-      "command": "node",
-      "args": ["/path/to/your-server/run-with-log.mjs"]
-    }
-  }
-}`}
+                    {(() => {
+                      const slug = serverSlug(server.name);
+                      const serverEntry: Record<string, unknown> = {
+                        command: 'node',
+                        args: ['/path/to/your-server/run-with-log.mjs'],
+                      };
+                      if (server.observability_reporting_key) {
+                        serverEntry.env = {
+                          MCP_OBSERVABILITY_ENDPOINT: `${window.location.origin}/api/observability/events`,
+                          MCP_OBSERVABILITY_KEY: server.observability_reporting_key,
+                          MCP_OBSERVABILITY_USER_ID: '',
+                          MCP_OBSERVABILITY_CLIENT_AGENT: 'Cursor',
+                          MCP_OBSERVABILITY_USER_TOKEN: '',
+                        };
+                      }
+                      return JSON.stringify({ mcpServers: { [slug]: serverEntry } }, null, 2);
+                    })()}
                   </pre>
                 </div>
               </div>
@@ -1587,6 +1520,8 @@ docker run -it --rm \\
               </p>
             </div>
           )}
+            </div>
+          </div>
         </div>
       )}
 

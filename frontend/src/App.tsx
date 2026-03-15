@@ -9,6 +9,7 @@ import Compositions from './pages/Compositions';
 import ImportOpenAPI from './pages/ImportOpenAPI';
 import FlowBuilderPage from './pages/FlowBuilderPage';
 import Marketplace from './pages/Marketplace';
+import Observability from './pages/Observability';
 import Docs from './pages/Docs';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -49,6 +50,7 @@ function AppLayout() {
           <Route path="/flow" element={<FlowBuilderPage />} />
           <Route path="/compositions" element={<Compositions />} />
           <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/observability" element={<Observability />} />
           <Route path="/import/openapi" element={<ImportOpenAPI />} />
           <Route path="/docs" element={<Docs />} />
         </Routes>

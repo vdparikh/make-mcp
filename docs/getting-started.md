@@ -587,6 +587,35 @@ That means Cursor’s model is not calling your server (or isn’t being given y
 
 If the server is enabled and you’re in the right mode but the model still refuses to call it, that’s a Cursor product limitation. Your Make MCP–generated server is valid; the client just has to send requests to it.
 
+### Setting observability env parameters in Cursor
+
+After you **download** an MCP server and **enable observability reporting** in Make MCP (server → Observability tab → **Enable reporting**), you need to pass the endpoint URL and key to the server when Cursor runs it. Cursor passes environment variables from its MCP config to the server process.
+
+1. **In Make MCP:** Open your server → **Observability** tab → click **Enable reporting**. Copy the two values shown:
+   - `MCP_OBSERVABILITY_ENDPOINT` (e.g. `https://your-make-mcp-host/api/observability/events`)
+   - `MCP_OBSERVABILITY_KEY` (the reporting key)
+2. **In Cursor:** Open the MCP config: **Settings → MCP → Edit config** (or edit `~/.cursor/mcp.json`).
+3. Find your server's entry under `mcpServers` and add an **`env`** object with those two variables:
+
+```json
+{
+  "mcpServers": {
+    "your-server-name": {
+      "command": "node",
+      "args": ["/full/path/to/your-server/dist/server.js"],
+      "env": {
+        "MCP_OBSERVABILITY_ENDPOINT": "https://your-make-mcp-host/api/observability/events",
+        "MCP_OBSERVABILITY_KEY": "paste-the-key-from-make-mcp-here"
+      }
+    }
+  }
+}
+```
+
+4. **Save** the config and **restart Cursor** (or disable/re-enable the server in Settings → MCP). Tool calls from that server will then be sent to Make MCP and appear under **Observability** in the sidebar.
+
+If you use `run-with-log.mjs` in `args` for local logging, add the same `env` block so the server receives both logging and observability variables.
+
 ---
 
 ## Example: Location Lookup Tool

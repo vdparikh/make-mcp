@@ -170,7 +170,10 @@ type ToolExecution struct {
 	ToolID           string          `json:"tool_id"`
 	ServerID         string          `json:"server_id"`
 	ToolName         string          `json:"tool_name,omitempty"`   // set for runtime-reported events
-	Source           string          `json:"source,omitempty"`      // "playground" | "runtime"
+	Source           string          `json:"source,omitempty"`     // "playground" | "runtime"
+	ClientUserID     string          `json:"client_user_id,omitempty"`   // optional: end-user/tenant identifier
+	ClientAgent      string          `json:"client_agent,omitempty"`    // optional: e.g. "Cursor", "Claude Desktop"
+	ClientToken      string          `json:"client_token,omitempty"`    // optional: API key/token for correlation
 	Input            json.RawMessage `json:"input,omitempty"`
 	Output           json.RawMessage `json:"output,omitempty"`
 	Error            string          `json:"error,omitempty"`
@@ -383,6 +386,10 @@ type ObservabilityEventPayload struct {
 	Success          bool   `json:"success"`
 	Error            string `json:"error,omitempty"`
 	RepairSuggestion string `json:"repair_suggestion,omitempty"`
+	// Optional: identify who and which client the call came from (when many users use the same MCP)
+	ClientUserID string `json:"client_user_id,omitempty"` // end-user or tenant identifier
+	ClientAgent  string `json:"client_agent,omitempty"`   // e.g. "Cursor", "Claude Desktop", "VS Code"
+	ClientToken  string `json:"client_token,omitempty"`    // optional API key/token for correlation
 }
 
 type ObservabilityEventsRequest struct {
@@ -390,14 +397,29 @@ type ObservabilityEventsRequest struct {
 	Events []ObservabilityEventPayload `json:"events" binding:"required"`
 }
 
-// ObservabilitySummaryResponse for the server observability tab
+// ObservabilitySummaryResponse for the server observability tab (enable reporting + env vars)
 type ObservabilitySummaryResponse struct {
-	ReportingKey     string                 `json:"reporting_key,omitempty"`
-	EndpointURL      string                 `json:"endpoint_url,omitempty"`
-	RecentEvents     []ToolExecution        `json:"recent_events"`
-	LatencyByTool    []ToolLatencyStat      `json:"latency_by_tool"`
-	FailuresByTool   []ToolFailureStat      `json:"failures_by_tool"`
-	RepairSuggestions []RepairSuggestionItem `json:"repair_suggestions"`
+	ReportingKey       string                 `json:"reporting_key,omitempty"`
+	EndpointURL        string                 `json:"endpoint_url,omitempty"`
+	RecentEvents       []ToolExecution        `json:"recent_events"`
+	LatencyByTool      []ToolLatencyStat      `json:"latency_by_tool"`
+	FailuresByTool     []ToolFailureStat      `json:"failures_by_tool"`
+	RepairSuggestions  []RepairSuggestionItem `json:"repair_suggestions"`
+}
+
+// ServerSummary for filter dropdowns
+type ServerSummary struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ObservabilityDashboardResponse for the global Observability page (filter by server, tool)
+type ObservabilityDashboardResponse struct {
+	Servers            []ServerSummary       `json:"servers"`
+	RecentEvents        []ToolExecution       `json:"recent_events"`
+	LatencyByTool       []ToolLatencyStat    `json:"latency_by_tool"`
+	FailuresByTool      []ToolFailureStat    `json:"failures_by_tool"`
+	RepairSuggestions   []RepairSuggestionItem `json:"repair_suggestions"`
 }
 
 type ToolLatencyStat struct {
