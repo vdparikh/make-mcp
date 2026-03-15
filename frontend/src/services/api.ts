@@ -14,6 +14,7 @@ import type {
   ServerVersion,
   PublishRequest,
   SecurityScoreResult,
+  ObservabilitySummaryResponse,
 } from '../types';
 
 const api = axios.create({
@@ -478,6 +479,20 @@ export const getServerFlows = async (serverId: string): Promise<Flow[]> => {
 
 export const getSecurityScore = async (serverId: string): Promise<SecurityScoreResult> => {
   const { data } = await api.get<SecurityScoreResult>(`/servers/${serverId}/security-score`);
+  return data;
+};
+
+export const getServerObservability = async (serverId: string): Promise<ObservabilitySummaryResponse> => {
+  const { data } = await api.get<ObservabilitySummaryResponse>(`/servers/${serverId}/observability`);
+  return data;
+};
+
+export const enableServerObservability = async (
+  serverId: string
+): Promise<{ key: string; endpoint_url: string; env: { MCP_OBSERVABILITY_ENDPOINT: string; MCP_OBSERVABILITY_KEY: string } }> => {
+  const { data } = await api.post<{ key: string; endpoint_url: string; env: { MCP_OBSERVABILITY_ENDPOINT: string; MCP_OBSERVABILITY_KEY: string } }>(
+    `/servers/${serverId}/observability/enable`
+  );
   return data;
 };
 

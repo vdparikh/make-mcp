@@ -178,14 +178,48 @@ export interface ToolExecution {
   id: string;
   tool_id: string;
   server_id: string;
-  input: Record<string, unknown>;
+  tool_name?: string;
+  source?: string;
+  input?: Record<string, unknown>;
   output?: Record<string, unknown>;
   error?: string;
-  status_code: number;
+  status_code?: number;
   duration_ms: number;
   success: boolean;
-  healing_applied: boolean;
+  healing_applied?: boolean;
+  repair_suggestion?: string;
   created_at: string;
+}
+
+export interface ToolLatencyStat {
+  tool_name: string;
+  tool_id: string;
+  count: number;
+  avg_ms: number;
+  p95_ms: number;
+}
+
+export interface ToolFailureStat {
+  tool_name: string;
+  tool_id: string;
+  count: number;
+  last_error?: string;
+}
+
+export interface RepairSuggestionItem {
+  tool_name: string;
+  tool_id: string;
+  suggestion: string;
+  created_at: string;
+}
+
+export interface ObservabilitySummaryResponse {
+  reporting_key?: string;
+  endpoint_url?: string;
+  recent_events: ToolExecution[];
+  latency_by_tool: ToolLatencyStat[];
+  failures_by_tool: ToolFailureStat[];
+  repair_suggestions: RepairSuggestionItem[];
 }
 
 export interface HealingSuggestion {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import type { Server, ContextConfig, ServerVersion, SecurityScoreResult } from '../types';
+import type { Server, ContextConfig, ServerVersion, SecurityScoreResult, ObservabilitySummaryResponse } from '../types';
 import { 
   getServer, 
   updateServer, 
@@ -16,6 +16,8 @@ import {
   getServerVersions,
   downloadServerVersion,
   getSecurityScore,
+  getServerObservability,
+  enableServerObservability,
 } from '../services/api';
 import ToolEditor from '../components/ToolEditor';
 import ResourceEditor from '../components/ResourceEditor';
@@ -25,7 +27,7 @@ import PolicyEditor from '../components/PolicyEditor';
 import TestPlayground from '../components/TestPlayground';
 import HealingDashboard from '../components/HealingDashboard';
 
-type TabType = 'general' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'deploy' | 'versions';
+type TabType = 'general' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'observability' | 'deploy' | 'versions';
 
 function serverSlug(name: string): string {
   return name.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -148,6 +150,217 @@ function SecurityScorePanel({ serverId }: { serverId: string }) {
       <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
         Improve your score by addressing the unmet criteria above. When you publish, this score is shown in the marketplace.
       </p>
+    </div>
+  );
+}
+
+function ObservabilityPanel({ serverId }: { serverId: string }) {
+  const [data, setData] = useState<ObservabilitySummaryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [enabling, setEnabling] = useState(false);
+
+  const fetchObservability = () => {
+    setLoading(true);
+    setError(null);
+    getServerObservability(serverId)
+      .then(setData)
+      .catch((err) => setError(err.response?.data?.error || err.message || 'Failed to load observability'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchObservability();
+  }, [serverId]);
+
+  const handleEnable = () => {
+    setEnabling(true);
+    enableServerObservability(serverId)
+      .then(() => {
+        toast.success('Observability reporting enabled. Set the env vars in your deployed server.');
+        fetchObservability();
+      })
+      .catch((err) => toast.error(err.response?.data?.error || err.message || 'Failed to enable'))
+      .finally(() => setEnabling(false));
+  };
+
+  if (loading && !data) {
+    return (
+      <div className="card">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <span className="spinner" style={{ width: 24, height: 24, borderWidth: 2 }}></span>
+          <p style={{ marginTop: '0.75rem' }}>Loading observability…</p>
+        </div>
+      </div>
+    );
+  }
+  if (error && !data) {
+    return (
+      <div className="card">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)' }}>
+          <i className="bi bi-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
+          <p style={{ marginTop: '0.75rem' }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const hasKey = data?.reporting_key;
+  const events = data?.recent_events ?? [];
+  const latency = data?.latency_by_tool ?? [];
+  const failures = data?.failures_by_tool ?? [];
+  const suggestions = data?.repair_suggestions ?? [];
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+              <i className="bi bi-graph-up" style={{ marginRight: '0.75rem' }}></i>
+              Runtime observability
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>
+              Tool calls, latency, failures, and repair suggestions from your MCP server when it runs in Cursor, Claude, or any client.
+            </p>
+          </div>
+          {!hasKey && (
+            <button className="btn btn-primary" onClick={handleEnable} disabled={enabling}>
+              {enabling ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> : <i className="bi bi-broadcast" />}
+              {' '}Enable reporting
+            </button>
+          )}
+        </div>
+        {hasKey && data?.endpoint_url && (
+          <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--background-secondary)', borderRadius: '8px', fontSize: '0.85rem' }}>
+            <div style={{ marginBottom: '0.5rem', fontWeight: 600 }}>Environment variables for your deployed server</div>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              MCP_OBSERVABILITY_ENDPOINT={data.endpoint_url}{'\n'}
+              MCP_OBSERVABILITY_KEY={data.reporting_key}
+            </pre>
+            <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              After setting these and restarting the server, tool calls will appear here.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {events.length > 0 && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+            <i className="bi bi-list-ul" style={{ marginRight: '0.5rem' }}></i>
+            Recent tool calls
+          </h4>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Tool</th>
+                  <th>Time</th>
+                  <th>Latency</th>
+                  <th>Status</th>
+                  <th>Error / Suggestion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.slice(0, 50).map((e) => (
+                  <tr key={e.id}>
+                    <td>{e.tool_name || e.tool_id}</td>
+                    <td>{new Date(e.created_at).toLocaleString()}</td>
+                    <td>{e.duration_ms} ms</td>
+                    <td>
+                      {e.success ? (
+                        <span style={{ color: 'var(--success)' }}><i className="bi bi-check-circle" /> OK</span>
+                      ) : (
+                        <span style={{ color: 'var(--danger)' }}><i className="bi bi-x-circle" /> Failed</span>
+                      )}
+                    </td>
+                    <td style={{ fontSize: '0.85rem' }}>
+                      {e.error && <span style={{ color: 'var(--danger)' }}>{e.error}</span>}
+                      {e.repair_suggestion && (
+                        <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                          <i className="bi bi-lightbulb" /> {e.repair_suggestion}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {(latency.length > 0 || failures.length > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          {latency.length > 0 && (
+            <div className="card">
+              <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+                <i className="bi bi-speedometer2" style={{ marginRight: '0.5rem' }}></i>
+                Latency by tool
+              </h4>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {latency.map((s) => (
+                  <li key={s.tool_id || s.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
+                    <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      {s.count} calls · avg {Math.round(s.avg_ms)} ms · max {s.p95_ms} ms
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {failures.length > 0 && (
+            <div className="card">
+              <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+                <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.5rem' }}></i>
+                Failures by tool
+              </h4>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {failures.map((f) => (
+                  <li key={f.tool_id || f.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
+                    <div style={{ fontWeight: 500 }}>{f.tool_name || f.tool_id}</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--danger)' }}>{f.count} failure(s)</div>
+                    {f.last_error && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{f.last_error}</div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="card">
+          <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+            <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem' }}></i>
+            Repair suggestions
+          </h4>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {suggestions.map((s, i) => (
+              <li key={i} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)' }}>
+                <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
+                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{s.suggestion}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                  {new Date(s.created_at).toLocaleString()}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!hasKey && events.length === 0 && !loading && (
+        <div className="card">
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+            <i className="bi bi-graph-up" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}></i>
+            <p>Enable reporting and set the env vars in your deployed MCP server to see tool calls, latency, and repair suggestions here.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -433,6 +646,7 @@ export default function ServerEditor() {
     { id: 'security', label: 'Security', icon: 'bi-shield-lock' },
     { id: 'testing', label: 'Testing', icon: 'bi-play-circle' },
     { id: 'healing', label: 'Healing', icon: 'bi-bandaid' },
+    { id: 'observability', label: 'Observability', icon: 'bi-graph-up' },
     { id: 'versions', label: 'Versions', icon: 'bi-clock-history' },
     { id: 'deploy', label: 'Deploy', icon: 'bi-rocket-takeoff' },
   ];
@@ -847,6 +1061,10 @@ export default function ServerEditor() {
             <HealingDashboard
               tools={server.tools || []}
             />
+          )}
+
+          {activeTab === 'observability' && (
+            <ObservabilityPanel serverId={server.id} />
           )}
 
           {activeTab === 'versions' && (

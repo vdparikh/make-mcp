@@ -189,7 +189,7 @@ export default function HealingDashboard({ tools }: Props) {
                     <div className="execution-details">
                       <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>
                         {exec.success ? 'Success' : 'Failed'}
-                        {exec.status_code > 0 && (
+                        {(exec.status_code ?? 0) > 0 && (
                           <span style={{ fontWeight: 'normal', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
                             HTTP {exec.status_code}
                           </span>
