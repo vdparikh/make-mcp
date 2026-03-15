@@ -86,7 +86,13 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			servers.GET("/:id/versions/:version/download", h.DownloadServerVersion)
 			servers.GET("/:id/flows", h.GetServerFlows)
 			servers.GET("/:id/security-score", h.GetSecurityScore)
+			servers.GET("/:id/observability", h.GetServerObservability)
+			servers.POST("/:id/observability/enable", h.EnableServerObservability)
 		}
+
+		// Observability: dashboard (auth) and ingestion (key-based, no JWT)
+		api.GET("/observability", h.AuthMiddleware(), h.GetObservability)
+		api.POST("/observability/events", h.IngestObservabilityEvents)
 
 		marketplace := api.Group("/marketplace")
 		{
@@ -1352,6 +1358,267 @@ func (h *Handler) GetHealingSuggestions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, suggestions)
+}
+
+// IngestObservabilityEvents receives tool execution events from a running MCP server (key in body).
+func (h *Handler) IngestObservabilityEvents(c *gin.Context) {
+	var req models.ObservabilityEventsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if len(req.Events) == 0 {
+		c.JSON(http.StatusOK, gin.H{"accepted": 0})
+		return
+	}
+	server, err := h.db.GetServerByObservabilityKey(c.Request.Context(), req.Key)
+	if err != nil || server == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or unknown observability key"})
+		return
+	}
+	ctx := c.Request.Context()
+	accepted := 0
+	for _, ev := range req.Events {
+		toolID, err := h.db.GetToolIDByServerAndName(ctx, server.ID, ev.ToolName)
+		if err != nil || toolID == "" {
+			continue
+		}
+		exec := &models.ToolExecution{
+			ToolID:           toolID,
+			ServerID:         server.ID,
+			ToolName:         ev.ToolName,
+			Source:           "runtime",
+			ClientUserID:     strings.TrimSpace(ev.ClientUserID),
+			ClientAgent:      strings.TrimSpace(ev.ClientAgent),
+			ClientToken:      strings.TrimSpace(ev.ClientToken),
+			DurationMs:       ev.DurationMs,
+			Success:          ev.Success,
+			Error:            ev.Error,
+			RepairSuggestion: ev.RepairSuggestion,
+		}
+		if !ev.Success && ev.RepairSuggestion == "" {
+			analysis := h.healing.AnalyzeFailure(exec)
+			if analysis != nil && len(analysis.Suggestions) > 0 {
+				exec.RepairSuggestion = analysis.Suggestions[0].Message
+			}
+		}
+		if err := h.db.LogToolExecution(ctx, exec); err != nil {
+			continue
+		}
+		accepted++
+	}
+	c.JSON(http.StatusOK, gin.H{"accepted": accepted})
+}
+
+// GetServerObservability returns recent runtime events, latency and failure stats, and repair suggestions.
+func (h *Handler) GetServerObservability(c *gin.Context) {
+	serverID := c.Param("id")
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	server, err := h.db.GetServer(c.Request.Context(), serverID)
+	if err != nil || server == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+		return
+	}
+	if server.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	events, err := h.db.ListRuntimeExecutionsByServer(c.Request.Context(), serverID, 200)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	latencyByTool := make(map[string]*models.ToolLatencyStat)
+	failuresByTool := make(map[string]*models.ToolFailureStat)
+	var repairSuggestions []models.RepairSuggestionItem
+	for i := range events {
+		e := &events[i]
+		toolKey := e.ToolName
+		if toolKey == "" {
+			toolKey = e.ToolID
+		}
+		if stat, ok := latencyByTool[toolKey]; ok {
+			stat.Count++
+			stat.AvgMs = (stat.AvgMs*float64(stat.Count-1) + float64(e.DurationMs)) / float64(stat.Count)
+			if e.DurationMs > stat.P95Ms {
+				stat.P95Ms = e.DurationMs
+			}
+		} else {
+			latencyByTool[toolKey] = &models.ToolLatencyStat{ToolName: e.ToolName, ToolID: e.ToolID, Count: 1, AvgMs: float64(e.DurationMs), P95Ms: e.DurationMs}
+		}
+		if !e.Success {
+			if f, ok := failuresByTool[toolKey]; ok {
+				f.Count++
+				if e.Error != "" {
+					f.LastError = e.Error
+				}
+			} else {
+				failuresByTool[toolKey] = &models.ToolFailureStat{ToolName: e.ToolName, ToolID: e.ToolID, Count: 1, LastError: e.Error}
+			}
+			if e.RepairSuggestion != "" {
+				repairSuggestions = append(repairSuggestions, models.RepairSuggestionItem{
+					ToolName: e.ToolName, ToolID: e.ToolID, Suggestion: e.RepairSuggestion, CreatedAt: e.CreatedAt,
+				})
+			}
+		}
+	}
+	// P95: sort latencies per tool and take 95th percentile (simplified: use max for now; could sort and index)
+	latencyList := make([]models.ToolLatencyStat, 0, len(latencyByTool))
+	for _, s := range latencyByTool {
+		latencyList = append(latencyList, *s)
+	}
+	failureList := make([]models.ToolFailureStat, 0, len(failuresByTool))
+	for _, f := range failuresByTool {
+		failureList = append(failureList, *f)
+	}
+	sort.Slice(repairSuggestions, func(i, j int) bool { return repairSuggestions[j].CreatedAt.Before(repairSuggestions[i].CreatedAt) })
+	if len(repairSuggestions) > 20 {
+		repairSuggestions = repairSuggestions[:20]
+	}
+	scheme := "https"
+	if c.GetHeader("X-Forwarded-Proto") == "http" || c.Request.TLS == nil {
+		scheme = "http"
+	}
+	baseURL := scheme + "://" + c.Request.Host
+	resp := models.ObservabilitySummaryResponse{
+		ReportingKey:       server.ObservabilityReportingKey,
+		EndpointURL:        baseURL + "/api/observability/events",
+		RecentEvents:       events,
+		LatencyByTool:      latencyList,
+		FailuresByTool:     failureList,
+		RepairSuggestions:  repairSuggestions,
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// GetObservability returns runtime events and stats for the current user, with optional server_id and tool_name filters.
+func (h *Handler) GetObservability(c *gin.Context) {
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	serverID := strings.TrimSpace(c.Query("server_id"))
+	toolName := strings.TrimSpace(c.Query("tool_name"))
+	clientUserID := strings.TrimSpace(c.Query("client_user_id"))
+	clientAgent := strings.TrimSpace(c.Query("client_agent"))
+	limit := 200
+	if l := c.Query("limit"); l != "" {
+		if n, err := fmt.Sscanf(l, "%d", &limit); n == 1 && err == nil && limit > 0 && limit <= 500 {
+			// use parsed limit
+		} else {
+			limit = 200
+		}
+	}
+	ctx := c.Request.Context()
+	servers, err := h.db.ListServers(ctx, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	serverSummaries := make([]models.ServerSummary, 0, len(servers))
+	for _, s := range servers {
+		serverSummaries = append(serverSummaries, models.ServerSummary{ID: s.ID, Name: s.Name})
+	}
+	events, err := h.db.ListRuntimeExecutionsForUser(ctx, userID, serverID, toolName, clientUserID, clientAgent, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	latencyByTool := make(map[string]*models.ToolLatencyStat)
+	failuresByTool := make(map[string]*models.ToolFailureStat)
+	var repairSuggestions []models.RepairSuggestionItem
+	for i := range events {
+		e := &events[i]
+		toolKey := e.ToolName
+		if toolKey == "" {
+			toolKey = e.ToolID
+		}
+		if stat, ok := latencyByTool[toolKey]; ok {
+			stat.Count++
+			stat.AvgMs = (stat.AvgMs*float64(stat.Count-1) + float64(e.DurationMs)) / float64(stat.Count)
+			if e.DurationMs > stat.P95Ms {
+				stat.P95Ms = e.DurationMs
+			}
+		} else {
+			latencyByTool[toolKey] = &models.ToolLatencyStat{ToolName: e.ToolName, ToolID: e.ToolID, Count: 1, AvgMs: float64(e.DurationMs), P95Ms: e.DurationMs}
+		}
+		if !e.Success {
+			if f, ok := failuresByTool[toolKey]; ok {
+				f.Count++
+				if e.Error != "" {
+					f.LastError = e.Error
+				}
+			} else {
+				failuresByTool[toolKey] = &models.ToolFailureStat{ToolName: e.ToolName, ToolID: e.ToolID, Count: 1, LastError: e.Error}
+			}
+			if e.RepairSuggestion != "" {
+				repairSuggestions = append(repairSuggestions, models.RepairSuggestionItem{
+					ToolName: e.ToolName, ToolID: e.ToolID, Suggestion: e.RepairSuggestion, CreatedAt: e.CreatedAt,
+				})
+			}
+		}
+	}
+	latencyList := make([]models.ToolLatencyStat, 0, len(latencyByTool))
+	for _, s := range latencyByTool {
+		latencyList = append(latencyList, *s)
+	}
+	failureList := make([]models.ToolFailureStat, 0, len(failuresByTool))
+	for _, f := range failuresByTool {
+		failureList = append(failureList, *f)
+	}
+	sort.Slice(repairSuggestions, func(i, j int) bool { return repairSuggestions[j].CreatedAt.Before(repairSuggestions[i].CreatedAt) })
+	if len(repairSuggestions) > 20 {
+		repairSuggestions = repairSuggestions[:20]
+	}
+	c.JSON(http.StatusOK, models.ObservabilityDashboardResponse{
+		Servers:           serverSummaries,
+		RecentEvents:      events,
+		LatencyByTool:     latencyList,
+		FailuresByTool:    failureList,
+		RepairSuggestions: repairSuggestions,
+	})
+}
+
+// EnableServerObservability generates or returns the reporting key and shows env vars for the generated server.
+func (h *Handler) EnableServerObservability(c *gin.Context) {
+	serverID := c.Param("id")
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	server, err := h.db.GetServer(c.Request.Context(), serverID)
+	if err != nil || server == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+		return
+	}
+	if server.OwnerID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	key, err := h.db.EnsureServerObservabilityKey(c.Request.Context(), serverID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	scheme := "https"
+	if c.GetHeader("X-Forwarded-Proto") == "http" || c.Request.TLS == nil {
+		scheme = "http"
+	}
+	baseURL := scheme + "://" + c.Request.Host
+	c.JSON(http.StatusOK, gin.H{
+		"key":          key,
+		"endpoint_url": baseURL + "/api/observability/events",
+		"env": gin.H{
+			"MCP_OBSERVABILITY_ENDPOINT": baseURL + "/api/observability/events",
+			"MCP_OBSERVABILITY_KEY":      key,
+		},
+	})
 }
 
 // Resource handlers

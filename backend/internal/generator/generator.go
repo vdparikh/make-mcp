@@ -594,6 +594,54 @@ function mcpLog(msg: string) {
   }
 }
 
+const MCP_OBSERVABILITY_ENDPOINT = process.env.MCP_OBSERVABILITY_ENDPOINT;
+const MCP_OBSERVABILITY_KEY = process.env.MCP_OBSERVABILITY_KEY;
+const MCP_OBSERVABILITY_USER_ID = process.env.MCP_OBSERVABILITY_USER_ID || "";
+const MCP_OBSERVABILITY_CLIENT_AGENT = process.env.MCP_OBSERVABILITY_CLIENT_AGENT || "";
+const MCP_OBSERVABILITY_USER_TOKEN = process.env.MCP_OBSERVABILITY_USER_TOKEN || "";
+async function reportObservabilityEvent(
+  toolName: string,
+  durationMs: number,
+  success: boolean,
+  errorMessage: string,
+  repairSuggestion: string
+) {
+  if (!MCP_OBSERVABILITY_ENDPOINT || !MCP_OBSERVABILITY_KEY) return;
+  try {
+    const ev: Record<string, unknown> = {
+      tool_name: toolName,
+      duration_ms: durationMs,
+      success,
+      error: errorMessage,
+      repair_suggestion: repairSuggestion,
+    };
+    if (MCP_OBSERVABILITY_USER_ID) ev.client_user_id = MCP_OBSERVABILITY_USER_ID;
+    if (MCP_OBSERVABILITY_CLIENT_AGENT) ev.client_agent = MCP_OBSERVABILITY_CLIENT_AGENT;
+    if (MCP_OBSERVABILITY_USER_TOKEN) ev.client_token = MCP_OBSERVABILITY_USER_TOKEN;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 3000);
+    await fetch(MCP_OBSERVABILITY_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: MCP_OBSERVABILITY_KEY, events: [ev] }),
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+  } catch (_) {
+    // best-effort; do not block or log to stderr
+  }
+}
+
+function suggestRepair(errorMessage: string): string {
+  const msg = (errorMessage || "").toLowerCase();
+  if (/401|unauthorized|invalid.*token|token.*expired|jwt/.test(msg)) return "Check or refresh authentication token.";
+  if (/404|not found/.test(msg)) return "Verify the resource path or identifier.";
+  if (/429|rate limit|too many requests/.test(msg)) return "Rate limited; retry after a short delay.";
+  if (/500|502|503|server error/.test(msg)) return "Remote server error; retry later.";
+  if (/timeout|etimedout|econnrefused/.test(msg)) return "Network or timeout issue; check connectivity and retry.";
+  return "";
+}
+
 const server = new Server(
   {
     name: "{{.Name}}",
@@ -680,6 +728,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         text = JSON.stringify(mcpApp, null, 2);
       }
     }
+    reportObservabilityEvent(name, Date.now() - callStart, true, "", "").catch(() => {});
     return {
       content: [
         {
@@ -690,7 +739,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    mcpLog("Tool " + name + " failed after " + (Date.now() - callStart) + "ms: " + errorMessage);
+    const durationMs = Date.now() - callStart;
+    mcpLog("Tool " + name + " failed after " + durationMs + "ms: " + errorMessage);
+    const repairSuggestion = suggestRepair(errorMessage);
+    reportObservabilityEvent(name, durationMs, false, errorMessage, repairSuggestion).catch(() => {});
     return {
       content: [
         {
@@ -1266,18 +1318,39 @@ docker run -it {{toSnakeCase .Name}}-mcp
 
 ## MCP Configuration
 
-Add to your MCP client configuration:
+Add to your MCP client configuration. In **Cursor**: Settings → MCP → Edit config (or edit ` + "`~/.cursor/mcp.json`" + ` directly).
+
+**Basic (no observability):**
 
 ` + "```json" + `
 {
   "mcpServers": {
     "{{toSnakeCase .Name}}": {
       "command": "node",
-      "args": ["path/to/dist/server.js"]
+      "args": ["/absolute/path/to/this/folder/dist/server.js"]
     }
   }
 }
 ` + "```" + `
+
+**With observability reporting** (tool calls, latency, failures appear in Make MCP → Observability): get the endpoint URL and key from your server's **Observability** tab in Make MCP (Enable reporting), then add an ` + "`env`" + ` block:
+
+` + "```json" + `
+{
+  "mcpServers": {
+    "{{toSnakeCase .Name}}": {
+      "command": "node",
+      "args": ["/absolute/path/to/this/folder/dist/server.js"],
+      "env": {
+        "MCP_OBSERVABILITY_ENDPOINT": "https://your-make-mcp-host/api/observability/events",
+        "MCP_OBSERVABILITY_KEY": "your-reporting-key-from-make-mcp"
+      }
+    }
+  }
+}
+` + "```" + `
+
+Replace ` + "`/absolute/path/to/this/folder`" + ` with the real path (e.g. ` + "`/Users/you/Downloads/{{toSnakeCase .Name}}-mcp-server`" + `). If you use ` + "`run-with-log.mjs`" + ` for logging, use its path in ` + "`args`" + ` and add the same ` + "`env`" + ` block; the server will receive these variables.
 
 ## Verifying that your client (e.g. Cursor) invokes the server
 
@@ -1297,6 +1370,21 @@ When your MCP client (Cursor, Claude, etc.) runs this server, it spawns it in th
    - ` + "`Tool get_ip_info completed in 85ms`" + `
 
 If those lines appear when you ask the agent to use a tool, your platform is generating a valid MCP server and the client is invoking it correctly.
+
+## Optional: Runtime observability
+
+To send tool calls, latency, and failures to Make MCP (Observability page), set in your MCP client ` + "`env`" + `:
+
+- ` + "`MCP_OBSERVABILITY_ENDPOINT`" + ` - e.g. ` + "`https://your-make-mcp-host/api/observability/events`" + `
+- ` + "`MCP_OBSERVABILITY_KEY`" + ` - the reporting key from the server's Observability tab (Enable reporting)
+
+Optional (when many users share the same MCP, so you can see who and which client had errors):
+
+- ` + "`MCP_OBSERVABILITY_USER_ID`" + ` - end-user or tenant identifier (e.g. ` + "`user_123`" + `, email, or tenant id)
+- ` + "`MCP_OBSERVABILITY_CLIENT_AGENT`" + ` - AI client name (e.g. ` + "`Cursor`" + `, ` + "`Claude Desktop`" + `, ` + "`VS Code`" + `)
+- ` + "`MCP_OBSERVABILITY_USER_TOKEN`" + ` - optional API key or token for correlation (stored with the event, not validated)
+
+The server will POST events after each tool call; failures will include repair suggestions when possible.
 
 ---
 Generated by MCP Server Builder

@@ -56,6 +56,10 @@ export default function Sidebar() {
             <i className="bi bi-shop"></i>
             <span>Marketplace</span>
           </Link>
+          <Link to="/observability" className={`nav-item ${isActive('/observability') ? 'active' : ''}`}>
+            <i className="bi bi-graph-up"></i>
+            <span>Observability</span>
+          </Link>
           <Link to="/compositions" className={`nav-item ${isActive('/compositions') ? 'active' : ''}`}>
             <i className="bi bi-layers-fill"></i>
             <span>Compositions</span>

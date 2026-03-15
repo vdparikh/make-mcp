@@ -176,6 +176,14 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_policies_tool_id ON policies(tool_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_executions_tool_id ON tool_executions(tool_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_executions_created_at ON tool_executions(created_at)`,
+		`ALTER TABLE tool_executions ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'playground'`,
+		`ALTER TABLE tool_executions ADD COLUMN IF NOT EXISTS tool_name VARCHAR(255)`,
+		`ALTER TABLE tool_executions ADD COLUMN IF NOT EXISTS repair_suggestion TEXT`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_executions_server_source ON tool_executions(server_id, source)`,
+		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS observability_reporting_key VARCHAR(64) UNIQUE`,
+		`ALTER TABLE tool_executions ADD COLUMN IF NOT EXISTS client_user_id VARCHAR(255)`,
+		`ALTER TABLE tool_executions ADD COLUMN IF NOT EXISTS client_agent VARCHAR(100)`,
+		`ALTER TABLE tool_executions ADD COLUMN IF NOT EXISTS client_token VARCHAR(512)`,
 		`CREATE INDEX IF NOT EXISTS idx_flows_server_id ON flows(server_id)`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS icon VARCHAR(100)`,
 		`CREATE TABLE IF NOT EXISTS users (
@@ -271,10 +279,11 @@ func (db *DB) GetServer(ctx context.Context, id string) (*models.Server, error) 
 	var isPublic *bool
 	var downloads *int
 
+	var obsKey *string
 	err := db.pool.QueryRow(ctx,
-		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, auth_config, created_at, updated_at 
+		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, auth_config, observability_reporting_key, created_at, updated_at 
 		 FROM servers WHERE id = $1`, id).
-		Scan(&server.ID, &server.Name, &server.Description, &server.Version, &icon, &status, &publishedAt, &latestVersion, &ownerID, &isPublic, &downloads, &authConfig, &server.CreatedAt, &server.UpdatedAt)
+		Scan(&server.ID, &server.Name, &server.Description, &server.Version, &icon, &status, &publishedAt, &latestVersion, &ownerID, &isPublic, &downloads, &authConfig, &obsKey, &server.CreatedAt, &server.UpdatedAt)
 
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -311,6 +320,9 @@ func (db *DB) GetServer(ctx context.Context, id string) (*models.Server, error) 
 
 	if authConfig != nil {
 		server.AuthConfig = authConfig
+	}
+	if obsKey != nil {
+		server.ObservabilityReportingKey = *obsKey
 	}
 
 	tools, err := db.GetToolsByServer(ctx, id)
@@ -517,6 +529,19 @@ func (db *DB) GetToolsByServer(ctx context.Context, serverID string) ([]models.T
 	}
 
 	return tools, nil
+}
+
+// GetToolIDByServerAndName returns the tool ID for a tool in the server with the given name (for observability event resolution).
+func (db *DB) GetToolIDByServerAndName(ctx context.Context, serverID, toolName string) (string, error) {
+	var id string
+	err := db.pool.QueryRow(ctx, `SELECT id FROM tools WHERE server_id = $1 AND name = $2`, serverID, toolName).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (db *DB) UpdateTool(ctx context.Context, id string, req models.CreateToolRequest) (*models.Tool, error) {
@@ -738,11 +763,17 @@ func (db *DB) DeletePolicy(ctx context.Context, id string) error {
 func (db *DB) LogToolExecution(ctx context.Context, exec *models.ToolExecution) error {
 	exec.ID = uuid.New().String()
 	exec.CreatedAt = time.Now()
+	source := exec.Source
+	if source == "" {
+		source = "playground"
+	}
 
 	_, err := db.pool.Exec(ctx,
-		`INSERT INTO tool_executions (id, tool_id, server_id, input, output, error, status_code, duration_ms, success, healing_applied, created_at) 
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		exec.ID, exec.ToolID, exec.ServerID, exec.Input, exec.Output, exec.Error, exec.StatusCode, exec.DurationMs, exec.Success, exec.HealingApplied, exec.CreatedAt)
+		`INSERT INTO tool_executions (id, tool_id, server_id, tool_name, source, client_user_id, client_agent, client_token, input, output, error, status_code, duration_ms, success, healing_applied, repair_suggestion, created_at) 
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		exec.ID, exec.ToolID, exec.ServerID, nullIfEmpty(exec.ToolName), source,
+		nullIfEmpty(exec.ClientUserID), nullIfEmpty(exec.ClientAgent), nullIfEmpty(exec.ClientToken),
+		exec.Input, exec.Output, exec.Error, exec.StatusCode, exec.DurationMs, exec.Success, exec.HealingApplied, nullIfEmpty(exec.RepairSuggestion), exec.CreatedAt)
 
 	return err
 }
@@ -753,7 +784,7 @@ func (db *DB) GetToolExecutions(ctx context.Context, toolID string, limit int) (
 	}
 
 	rows, err := db.pool.Query(ctx,
-		`SELECT id, tool_id, server_id, input, output, error, status_code, duration_ms, success, healing_applied, created_at 
+		`SELECT id, tool_id, server_id, COALESCE(tool_name, ''), COALESCE(source, 'playground'), COALESCE(client_user_id, ''), COALESCE(client_agent, ''), COALESCE(client_token, ''), input, output, error, status_code, duration_ms, success, healing_applied, COALESCE(repair_suggestion, ''), created_at 
 		 FROM tool_executions WHERE tool_id = $1 ORDER BY created_at DESC LIMIT $2`, toolID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying executions: %w", err)
@@ -763,13 +794,123 @@ func (db *DB) GetToolExecutions(ctx context.Context, toolID string, limit int) (
 	var executions []models.ToolExecution
 	for rows.Next() {
 		var e models.ToolExecution
-		if err := rows.Scan(&e.ID, &e.ToolID, &e.ServerID, &e.Input, &e.Output, &e.Error, &e.StatusCode, &e.DurationMs, &e.Success, &e.HealingApplied, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ToolID, &e.ServerID, &e.ToolName, &e.Source, &e.ClientUserID, &e.ClientAgent, &e.ClientToken, &e.Input, &e.Output, &e.Error, &e.StatusCode, &e.DurationMs, &e.Success, &e.HealingApplied, &e.RepairSuggestion, &e.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scanning execution: %w", err)
 		}
 		executions = append(executions, e)
 	}
 
 	return executions, nil
+}
+
+// GetServerByObservabilityKey returns the server that has the given reporting key (for runtime event ingestion).
+func (db *DB) GetServerByObservabilityKey(ctx context.Context, key string) (*models.Server, error) {
+	if key == "" {
+		return nil, nil
+	}
+	var id string
+	err := db.pool.QueryRow(ctx, `SELECT id FROM servers WHERE observability_reporting_key = $1`, key).Scan(&id)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return db.GetServer(ctx, id)
+}
+
+// EnsureServerObservabilityKey sets observability_reporting_key for the server if not set, and returns it.
+func (db *DB) EnsureServerObservabilityKey(ctx context.Context, serverID string) (string, error) {
+	var existing *string
+	err := db.pool.QueryRow(ctx, `SELECT observability_reporting_key FROM servers WHERE id = $1`, serverID).Scan(&existing)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil && *existing != "" {
+		return *existing, nil
+	}
+	key := uuid.New().String() // 36 chars, fits VARCHAR(64)
+	_, err = db.pool.Exec(ctx, `UPDATE servers SET observability_reporting_key = $1 WHERE id = $2`, key, serverID)
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// ListRuntimeExecutionsForUser returns runtime tool executions for all servers owned by the user, with optional server_id, tool_name, client_user_id, client_agent filters.
+func (db *DB) ListRuntimeExecutionsForUser(ctx context.Context, userID, serverID, toolName, clientUserID, clientAgent string, limit int) ([]models.ToolExecution, error) {
+	if userID == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	query := `SELECT e.id, e.tool_id, e.server_id, COALESCE(e.tool_name, ''), COALESCE(e.source, 'playground'), COALESCE(e.client_user_id, ''), COALESCE(e.client_agent, ''), COALESCE(e.client_token, ''), e.input, e.output, e.error, e.status_code, e.duration_ms, e.success, e.healing_applied, COALESCE(e.repair_suggestion, ''), e.created_at
+		FROM tool_executions e
+		INNER JOIN servers s ON e.server_id = s.id
+		WHERE s.owner_id::text = $1 AND e.source = 'runtime'`
+	args := []interface{}{userID}
+	argNum := 2
+	if serverID != "" {
+		query += fmt.Sprintf(" AND e.server_id = $%d", argNum)
+		args = append(args, serverID)
+		argNum++
+	}
+	if toolName != "" {
+		query += fmt.Sprintf(" AND e.tool_name = $%d", argNum)
+		args = append(args, toolName)
+		argNum++
+	}
+	if clientUserID != "" {
+		query += fmt.Sprintf(" AND e.client_user_id = $%d", argNum)
+		args = append(args, clientUserID)
+		argNum++
+	}
+	if clientAgent != "" {
+		query += fmt.Sprintf(" AND e.client_agent = $%d", argNum)
+		args = append(args, clientAgent)
+		argNum++
+	}
+	query += fmt.Sprintf(" ORDER BY e.created_at DESC LIMIT $%d", argNum)
+	args = append(args, limit)
+	rows, err := db.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying runtime executions for user: %w", err)
+	}
+	defer rows.Close()
+	var list []models.ToolExecution
+	for rows.Next() {
+		var e models.ToolExecution
+		if err := rows.Scan(&e.ID, &e.ToolID, &e.ServerID, &e.ToolName, &e.Source, &e.ClientUserID, &e.ClientAgent, &e.ClientToken, &e.Input, &e.Output, &e.Error, &e.StatusCode, &e.DurationMs, &e.Success, &e.HealingApplied, &e.RepairSuggestion, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning execution: %w", err)
+		}
+		list = append(list, e)
+	}
+	return list, nil
+}
+
+// ListRuntimeExecutionsByServer returns recent tool executions with source='runtime' for the observability tab.
+func (db *DB) ListRuntimeExecutionsByServer(ctx context.Context, serverID string, limit int) ([]models.ToolExecution, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := db.pool.Query(ctx,
+		`SELECT id, tool_id, server_id, COALESCE(tool_name, ''), COALESCE(source, 'playground'), COALESCE(client_user_id, ''), COALESCE(client_agent, ''), COALESCE(client_token, ''), input, output, error, status_code, duration_ms, success, healing_applied, COALESCE(repair_suggestion, ''), created_at 
+		 FROM tool_executions WHERE server_id = $1 AND source = 'runtime' ORDER BY created_at DESC LIMIT $2`, serverID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying runtime executions: %w", err)
+	}
+	defer rows.Close()
+
+	var list []models.ToolExecution
+	for rows.Next() {
+		var e models.ToolExecution
+		if err := rows.Scan(&e.ID, &e.ToolID, &e.ServerID, &e.ToolName, &e.Source, &e.ClientUserID, &e.ClientAgent, &e.ClientToken, &e.Input, &e.Output, &e.Error, &e.StatusCode, &e.DurationMs, &e.Success, &e.HealingApplied, &e.RepairSuggestion, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning execution: %w", err)
+		}
+		list = append(list, e)
+	}
+	return list, nil
 }
 
 // Healing suggestions

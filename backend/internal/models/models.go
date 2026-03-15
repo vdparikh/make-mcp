@@ -27,10 +27,11 @@ type Server struct {
 	OwnerID        string          `json:"owner_id,omitempty"`
 	IsPublic       bool            `json:"is_public"`
 	Downloads      int             `json:"downloads"`
-	SecurityScore  *int            `json:"security_score,omitempty"`  // 0-100, set for marketplace list/detail
-	SecurityGrade  *string         `json:"security_grade,omitempty"`  // A/B/C/D/F
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	SecurityScore            *int    `json:"security_score,omitempty"`  // 0-100, set for marketplace list/detail
+	SecurityGrade            *string `json:"security_grade,omitempty"`  // A/B/C/D/F
+	ObservabilityReportingKey string `json:"observability_reporting_key,omitempty"` // key for runtime to report events
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
 	Tools          []Tool          `json:"tools,omitempty"`
 	Resources      []Resource      `json:"resources,omitempty"`
 	Prompts        []Prompt        `json:"prompts,omitempty"`
@@ -163,19 +164,25 @@ type PolicyRule struct {
 	FailAction string          `json:"fail_action"` // deny, warn, approve
 }
 
-// ToolExecution records tool execution history for healing
+// ToolExecution records tool execution history for healing and observability
 type ToolExecution struct {
-	ID           string          `json:"id"`
-	ToolID       string          `json:"tool_id"`
-	ServerID     string          `json:"server_id"`
-	Input        json.RawMessage `json:"input"`
-	Output       json.RawMessage `json:"output,omitempty"`
-	Error        string          `json:"error,omitempty"`
-	StatusCode   int             `json:"status_code"`
-	DurationMs   int64           `json:"duration_ms"`
-	Success      bool            `json:"success"`
-	HealingApplied bool          `json:"healing_applied"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID               string          `json:"id"`
+	ToolID           string          `json:"tool_id"`
+	ServerID         string          `json:"server_id"`
+	ToolName         string          `json:"tool_name,omitempty"`   // set for runtime-reported events
+	Source           string          `json:"source,omitempty"`     // "playground" | "runtime"
+	ClientUserID     string          `json:"client_user_id,omitempty"`   // optional: end-user/tenant identifier
+	ClientAgent      string          `json:"client_agent,omitempty"`    // optional: e.g. "Cursor", "Claude Desktop"
+	ClientToken      string          `json:"client_token,omitempty"`    // optional: API key/token for correlation
+	Input            json.RawMessage `json:"input,omitempty"`
+	Output           json.RawMessage `json:"output,omitempty"`
+	Error            string          `json:"error,omitempty"`
+	StatusCode       int             `json:"status_code"`
+	DurationMs       int64           `json:"duration_ms"`
+	Success          bool            `json:"success"`
+	HealingApplied   bool            `json:"healing_applied"`
+	RepairSuggestion string          `json:"repair_suggestion,omitempty"` // from runtime or healing
+	CreatedAt        time.Time       `json:"created_at"`
 }
 
 // HealingSuggestion represents an auto-repair suggestion
@@ -370,4 +377,69 @@ type UserResponse struct {
 	Email     string    `json:"email"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// Observability: runtime-reported tool execution events (from generated MCP server)
+type ObservabilityEventPayload struct {
+	ToolName         string `json:"tool_name" binding:"required"`
+	DurationMs       int64  `json:"duration_ms"`
+	Success          bool   `json:"success"`
+	Error            string `json:"error,omitempty"`
+	RepairSuggestion string `json:"repair_suggestion,omitempty"`
+	// Optional: identify who and which client the call came from (when many users use the same MCP)
+	ClientUserID string `json:"client_user_id,omitempty"` // end-user or tenant identifier
+	ClientAgent  string `json:"client_agent,omitempty"`   // e.g. "Cursor", "Claude Desktop", "VS Code"
+	ClientToken  string `json:"client_token,omitempty"`    // optional API key/token for correlation
+}
+
+type ObservabilityEventsRequest struct {
+	Key    string                    `json:"key" binding:"required"` // observability_reporting_key
+	Events []ObservabilityEventPayload `json:"events" binding:"required"`
+}
+
+// ObservabilitySummaryResponse for the server observability tab (enable reporting + env vars)
+type ObservabilitySummaryResponse struct {
+	ReportingKey       string                 `json:"reporting_key,omitempty"`
+	EndpointURL        string                 `json:"endpoint_url,omitempty"`
+	RecentEvents       []ToolExecution        `json:"recent_events"`
+	LatencyByTool      []ToolLatencyStat      `json:"latency_by_tool"`
+	FailuresByTool     []ToolFailureStat      `json:"failures_by_tool"`
+	RepairSuggestions  []RepairSuggestionItem `json:"repair_suggestions"`
+}
+
+// ServerSummary for filter dropdowns
+type ServerSummary struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ObservabilityDashboardResponse for the global Observability page (filter by server, tool)
+type ObservabilityDashboardResponse struct {
+	Servers            []ServerSummary       `json:"servers"`
+	RecentEvents        []ToolExecution       `json:"recent_events"`
+	LatencyByTool       []ToolLatencyStat    `json:"latency_by_tool"`
+	FailuresByTool      []ToolFailureStat    `json:"failures_by_tool"`
+	RepairSuggestions   []RepairSuggestionItem `json:"repair_suggestions"`
+}
+
+type ToolLatencyStat struct {
+	ToolName  string  `json:"tool_name"`
+	ToolID    string  `json:"tool_id"`
+	Count     int     `json:"count"`
+	AvgMs     float64 `json:"avg_ms"`
+	P95Ms     int64   `json:"p95_ms"`
+}
+
+type ToolFailureStat struct {
+	ToolName string `json:"tool_name"`
+	ToolID   string `json:"tool_id"`
+	Count    int    `json:"count"`
+	LastError string `json:"last_error,omitempty"`
+}
+
+type RepairSuggestionItem struct {
+	ToolName   string    `json:"tool_name"`
+	ToolID     string    `json:"tool_id"`
+	Suggestion string    `json:"suggestion"`
+	CreatedAt  time.Time `json:"created_at"`
 }

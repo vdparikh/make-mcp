@@ -14,6 +14,8 @@ import type {
   ServerVersion,
   PublishRequest,
   SecurityScoreResult,
+  ObservabilitySummaryResponse,
+  ObservabilityDashboardResponse,
 } from '../types';
 
 const api = axios.create({
@@ -478,6 +480,38 @@ export const getServerFlows = async (serverId: string): Promise<Flow[]> => {
 
 export const getSecurityScore = async (serverId: string): Promise<SecurityScoreResult> => {
   const { data } = await api.get<SecurityScoreResult>(`/servers/${serverId}/security-score`);
+  return data;
+};
+
+export const getServerObservability = async (serverId: string): Promise<ObservabilitySummaryResponse> => {
+  const { data } = await api.get<ObservabilitySummaryResponse>(`/servers/${serverId}/observability`);
+  return data;
+};
+
+export const enableServerObservability = async (
+  serverId: string
+): Promise<{ key: string; endpoint_url: string; env: { MCP_OBSERVABILITY_ENDPOINT: string; MCP_OBSERVABILITY_KEY: string } }> => {
+  const { data } = await api.post<{ key: string; endpoint_url: string; env: { MCP_OBSERVABILITY_ENDPOINT: string; MCP_OBSERVABILITY_KEY: string } }>(
+    `/servers/${serverId}/observability/enable`
+  );
+  return data;
+};
+
+export const getObservabilityDashboard = async (params?: {
+  server_id?: string;
+  tool_name?: string;
+  client_user_id?: string;
+  client_agent?: string;
+  limit?: number;
+}): Promise<ObservabilityDashboardResponse> => {
+  const searchParams = new URLSearchParams();
+  if (params?.server_id) searchParams.set('server_id', params.server_id);
+  if (params?.tool_name) searchParams.set('tool_name', params.tool_name);
+  if (params?.client_user_id) searchParams.set('client_user_id', params.client_user_id);
+  if (params?.client_agent) searchParams.set('client_agent', params.client_agent);
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const q = searchParams.toString();
+  const { data } = await api.get<ObservabilityDashboardResponse>(`/observability${q ? `?${q}` : ''}`);
   return data;
 };
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import type { Server, ContextConfig, ServerVersion, SecurityScoreResult } from '../types';
+import type { Server, ContextConfig, ServerVersion, SecurityScoreResult, ObservabilitySummaryResponse } from '../types';
 import { 
   getServer, 
   updateServer, 
@@ -16,6 +16,8 @@ import {
   getServerVersions,
   downloadServerVersion,
   getSecurityScore,
+  getServerObservability,
+  enableServerObservability,
 } from '../services/api';
 import ToolEditor from '../components/ToolEditor';
 import ResourceEditor from '../components/ResourceEditor';
@@ -25,7 +27,7 @@ import PolicyEditor from '../components/PolicyEditor';
 import TestPlayground from '../components/TestPlayground';
 import HealingDashboard from '../components/HealingDashboard';
 
-type TabType = 'general' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'deploy' | 'versions';
+type TabType = 'general' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'observability' | 'deploy' | 'versions';
 
 function serverSlug(name: string): string {
   return name.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
@@ -152,6 +154,111 @@ function SecurityScorePanel({ serverId }: { serverId: string }) {
   );
 }
 
+function ObservabilityPanel({ serverId }: { serverId: string }) {
+  const [data, setData] = useState<ObservabilitySummaryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [enabling, setEnabling] = useState(false);
+
+  const fetchObservability = () => {
+    setLoading(true);
+    setError(null);
+    getServerObservability(serverId)
+      .then(setData)
+      .catch((err) => setError(err.response?.data?.error || err.message || 'Failed to load observability'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchObservability();
+  }, [serverId]);
+
+  const handleEnable = () => {
+    setEnabling(true);
+    enableServerObservability(serverId)
+      .then(() => {
+        toast.success('Observability reporting enabled. Set the env vars in your deployed server.');
+        fetchObservability();
+      })
+      .catch((err) => toast.error(err.response?.data?.error || err.message || 'Failed to enable'))
+      .finally(() => setEnabling(false));
+  };
+
+  if (loading && !data) {
+    return (
+      <div className="card">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+          <span className="spinner" style={{ width: 24, height: 24, borderWidth: 2 }}></span>
+          <p style={{ marginTop: '0.75rem' }}>Loading observability…</p>
+        </div>
+      </div>
+    );
+  }
+  if (error && !data) {
+    return (
+      <div className="card">
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)' }}>
+          <i className="bi bi-exclamation-triangle" style={{ fontSize: '2rem' }}></i>
+          <p style={{ marginTop: '0.75rem' }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const hasKey = data?.reporting_key;
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h3 className="card-title" style={{ marginBottom: '0.25rem' }}>
+              <i className="bi bi-graph-up" style={{ marginRight: '0.75rem' }}></i>
+              Enable runtime observability
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.9rem' }}>
+              Send tool calls, latency, and failures from this server to the Observability dashboard when it runs in Cursor, Claude, or any MCP client.
+            </p>
+          </div>
+          {!hasKey && (
+            <button className="btn btn-primary" onClick={handleEnable} disabled={enabling}>
+              {enabling ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span> : <i className="bi bi-broadcast" />}
+              {' '}Enable reporting
+            </button>
+          )}
+        </div>
+        {hasKey && data?.endpoint_url && (
+          <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--background-secondary)', borderRadius: '8px', fontSize: '0.85rem' }}>
+            <div style={{ marginBottom: '0.5rem', fontWeight: 600 }}>Environment variables for your deployed server</div>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              MCP_OBSERVABILITY_ENDPOINT={data.endpoint_url}{'\n'}
+              MCP_OBSERVABILITY_KEY={data.reporting_key}
+            </pre>
+            <p style={{ marginTop: '0.75rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              After setting these and restarting the server, tool calls will appear in the Observability dashboard. Optionally set <code>MCP_OBSERVABILITY_USER_ID</code> and <code>MCP_OBSERVABILITY_CLIENT_AGENT</code> (e.g. Cursor, Claude Desktop) so you can see who and which client each call came from when many users share the same MCP.
+            </p>
+            <p style={{ marginTop: '0.5rem' }}>
+              <Link to={`/observability?server_id=${serverId}`} className="btn btn-secondary btn-sm">
+                <i className="bi bi-graph-up" style={{ marginRight: '0.5rem' }}></i>
+                View observability dashboard
+              </Link>
+            </p>
+          </div>
+        )}
+      </div>
+
+      {!hasKey && !loading && (
+        <div className="card">
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+            <i className="bi bi-graph-up" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}></i>
+            <p>Enable reporting above, then set the env vars in your deployed MCP server. View all tool calls, latency, failures, and repair suggestions on the <Link to="/observability" style={{ color: 'var(--primary-color)' }}>Observability</Link> page.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ServerEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -170,6 +277,7 @@ export default function ServerEditor() {
   // Deploy state
   type DeployType = 'nodejs' | 'docker' | 'github' | 'azure' | null;
   const [selectedDeploy, setSelectedDeploy] = useState<DeployType>(null);
+  const [showDeployModal, setShowDeployModal] = useState(false);
   
   // GitHub export state
   const [showGitHubModal, setShowGitHubModal] = useState(false);
@@ -433,8 +541,8 @@ export default function ServerEditor() {
     { id: 'security', label: 'Security', icon: 'bi-shield-lock' },
     { id: 'testing', label: 'Testing', icon: 'bi-play-circle' },
     { id: 'healing', label: 'Healing', icon: 'bi-bandaid' },
+    { id: 'observability', label: 'Observability', icon: 'bi-graph-up' },
     { id: 'versions', label: 'Versions', icon: 'bi-clock-history' },
-    { id: 'deploy', label: 'Deploy', icon: 'bi-rocket-takeoff' },
   ];
 
   return (
@@ -482,20 +590,10 @@ export default function ServerEditor() {
           </button>
           <button 
             className="btn btn-success" 
-            onClick={handleGenerate}
-            disabled={generating}
+            onClick={() => setShowDeployModal(true)}
           >
-            {generating ? (
-              <>
-                <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }}></span>
-                Generating...
-              </>
-            ) : (
-              <>
-                <i className="bi bi-download"></i>
-                Generate & Download
-              </>
-            )}
+            <i className="bi bi-rocket-takeoff"></i>
+            Deploy
           </button>
         </div>
       </div>
@@ -849,6 +947,10 @@ export default function ServerEditor() {
             />
           )}
 
+          {activeTab === 'observability' && (
+            <ObservabilityPanel serverId={server.id} />
+          )}
+
           {activeTab === 'versions' && (
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -922,18 +1024,52 @@ export default function ServerEditor() {
             </div>
           )}
 
-      {activeTab === 'deploy' && (
-        <div>
+      {/* Deploy Modal */}
+      {showDeployModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowDeployModal(false)}
+        >
+          <div
+            style={{
+              background: 'var(--card-bg)',
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '900px',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',
+              position: 'relative',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', borderBottom: '1px solid var(--card-border)' }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
+                <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.5rem' }}></i>
+                Deploy Your Server
+              </h2>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setShowDeployModal(false)} aria-label="Close">
+                <i className="bi bi-x-lg"></i>
+              </button>
+            </div>
+            <div style={{ padding: '1.25rem' }}>
           {/* Step 1: Select deployment type */}
           <div className="card" style={{ marginBottom: '1.5rem' }}>
-            <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>
-              <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.75rem' }}></i>
-              Deploy Your Server
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', marginTop: 0 }}>
               Choose how you want to deploy your MCP server
             </p>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
               <button
                 onClick={() => setSelectedDeploy('nodejs')}
@@ -1087,14 +1223,20 @@ npm start`}
                       className="btn btn-sm btn-outline-primary"
                       onClick={() => {
                         const slug = serverSlug(server.name);
-                        const config = JSON.stringify({
-                          mcpServers: {
-                            [slug]: {
-                              command: 'node',
-                              args: ['/path/to/your-server/run-with-log.mjs'],
-                            },
-                          },
-                        }, null, 2);
+                        const serverEntry: Record<string, unknown> = {
+                          command: 'node',
+                          args: ['/path/to/your-server/run-with-log.mjs'],
+                        };
+                        if (server.observability_reporting_key) {
+                          serverEntry.env = {
+                            MCP_OBSERVABILITY_ENDPOINT: `${window.location.origin}/api/observability/events`,
+                            MCP_OBSERVABILITY_KEY: server.observability_reporting_key,
+                            MCP_OBSERVABILITY_USER_ID: '',
+                            MCP_OBSERVABILITY_CLIENT_AGENT: 'Cursor',
+                            MCP_OBSERVABILITY_USER_TOKEN: '',
+                          };
+                        }
+                        const config = JSON.stringify({ mcpServers: { [slug]: serverEntry } }, null, 2);
                         navigator.clipboard.writeText(config).then(
                           () => toast.success('MCP config copied to clipboard'),
                           () => toast.error('Could not copy')
@@ -1108,14 +1250,23 @@ npm start`}
                     Add to your Cursor or Claude Desktop <code>mcp.json</code> (replace path with your server folder):
                   </p>
                   <pre style={{ background: '#1a1a2e', padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', color: '#fde68a', margin: 0 }}>
-{`{
-  "mcpServers": {
-    "${serverSlug(server.name)}": {
-      "command": "node",
-      "args": ["/path/to/your-server/run-with-log.mjs"]
-    }
-  }
-}`}
+                    {(() => {
+                      const slug = serverSlug(server.name);
+                      const serverEntry: Record<string, unknown> = {
+                        command: 'node',
+                        args: ['/path/to/your-server/run-with-log.mjs'],
+                      };
+                      if (server.observability_reporting_key) {
+                        serverEntry.env = {
+                          MCP_OBSERVABILITY_ENDPOINT: `${window.location.origin}/api/observability/events`,
+                          MCP_OBSERVABILITY_KEY: server.observability_reporting_key,
+                          MCP_OBSERVABILITY_USER_ID: '',
+                          MCP_OBSERVABILITY_CLIENT_AGENT: 'Cursor',
+                          MCP_OBSERVABILITY_USER_TOKEN: '',
+                        };
+                      }
+                      return JSON.stringify({ mcpServers: { [slug]: serverEntry } }, null, 2);
+                    })()}
                   </pre>
                 </div>
               </div>
@@ -1369,6 +1520,8 @@ docker run -it --rm \\
               </p>
             </div>
           )}
+            </div>
+          </div>
         </div>
       )}
 
