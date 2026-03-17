@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started — Make MCP Docs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="navbar navbar-expand-lg">
+      <div class="container">
+        <a class="navbar-brand logo" href="../index.html">
+          <span class="logo-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <span class="logo-text">Make MCP</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="nav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-3 gap-lg-4">
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#features">Features</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#quick-start">Get Started</a></li>
+            <li class="nav-item"><a class="nav-link active" href="index.html">Docs</a></li>
+            <li class="nav-item"><a class="nav-link nav-cta btn btn-outline-light btn-sm px-3" href="https://github.com/vdparikh/make-mcp"><i class="bi bi-github me-1"></i> GitHub</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="py-5 doc-page">
+    <div class="container">
+      <nav class="mb-3" aria-label="Breadcrumb">
+        <a href="../index.html" class="text-decoration-none text-secondary small">Home</a>
+        <span class="text-secondary small mx-1">/</span>
+        <a href="index.html" class="text-decoration-none text-secondary small">Documentation</a>
+        <span class="text-secondary small mx-1">/</span>
+        <span class="small text-dark fw-500">Getting Started</span>
+      </nav>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <h1 class="section-title text-start mb-0">Documentation</h1>
+        <a href="index.html" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left me-1"></i> Back to Docs</a>
+      </div>
+
+      <div class="feature-card p-4">
+        <div class="doc-content">
+          <h1>Getting Started</h1>
+          <p>Welcome to the MCP Server Builder! This guide will help you get up and running quickly.</p>
+
+          <h2>What is MCP?</h2>
+          <p>The <strong>Model Context Protocol (MCP)</strong> allows AI systems to interact with external tools and data sources through standardized servers. MCP servers expose:</p>
+          <ul>
+            <li><strong>Tools</strong> — Functions that AI can call</li>
+            <li><strong>Resources</strong> — Data endpoints</li>
+            <li><strong>Prompts</strong> — Templated instructions</li>
+          </ul>
+
+          <h2>Quick Start</h2>
+
+          <h3>1. Create a Server</h3>
+          <ol>
+            <li>Log in, then click <strong>"New Server"</strong> on the Dashboard</li>
+            <li>Enter name, description, and optional version</li>
+            <li>Click <strong>"Create Server"</strong> in the modal</li>
+          </ol>
+
+          <h3>2. Add Tools</h3>
+          <p>Tools are the core functionality of your MCP server. Each tool:</p>
+          <ul>
+            <li>Has a name and description</li>
+            <li>Defines input/output schemas</li>
+            <li>Specifies how to execute: <strong>rest_api</strong>, <strong>graphql</strong>, <strong>cli</strong> (e.g. kubectl, docker), <strong>flow</strong> (visual pipeline), <strong>database</strong>, <strong>javascript</strong>, <strong>python</strong>, or <strong>webhook</strong></li>
+          </ul>
+          <p><strong>Example Tool:</strong></p>
+          <pre><code>{
+  "name": "get_weather",
+  "description": "Get weather for a city",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "city": { "type": "string" }
+    },
+    "required": ["city"]
+  }
+}</code></pre>
+
+          <h3>3. Test Your Tools</h3>
+          <p>Use the <strong>Testing</strong> tab to test tools before deployment:</p>
+          <ol>
+            <li>Select a tool</li>
+            <li>Enter test input</li>
+            <li>Click <strong>"Run Test"</strong></li>
+            <li>View the response</li>
+          </ol>
+
+          <h3>4. Deploy</h3>
+          <p>Open <strong>Deploy</strong> in the server left nav. Options:</p>
+          <ul>
+            <li><strong>Node.js</strong> — Generate &amp; download ZIP (includes <code>run-with-log.mjs</code> for verifying tool calls)</li>
+            <li><strong>Docker</strong> — Use generated Dockerfile (non-root)</li>
+            <li><strong>GitHub</strong> — Push generated server to a repo</li>
+            <li><strong>Deploy to Cloud</strong> — Placeholder for future cloud deployment</li>
+          </ul>
+
+          <h2>Next Steps</h2>
+          <ul>
+            <li>Learn about <a href="creating-servers.html">Creating Servers</a> in detail</li>
+            <li>Explore <a href="compositions.html">Server Compositions</a> to combine servers</li>
+            <li>Check your <strong>Security</strong> tab in the server editor for the security score (SlowMist checklist)</li>
+            <li>Read <a href="security-best-practices.html">Security Best Practices</a> and advanced features like Context Engine and Governance</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

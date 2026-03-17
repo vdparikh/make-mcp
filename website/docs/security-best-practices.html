@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Best Practices — Make MCP Docs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="navbar navbar-expand-lg">
+      <div class="container">
+        <a class="navbar-brand logo" href="../index.html">
+          <span class="logo-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <span class="logo-text">Make MCP</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="nav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-3 gap-lg-4">
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#features">Features</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#quick-start">Get Started</a></li>
+            <li class="nav-item"><a class="nav-link active" href="index.html">Docs</a></li>
+            <li class="nav-item"><a class="nav-link nav-cta btn btn-outline-light btn-sm px-3" href="https://github.com/vdparikh/make-mcp"><i class="bi bi-github me-1"></i> GitHub</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="py-5 doc-page">
+    <div class="container">
+      <nav class="mb-3" aria-label="Breadcrumb">
+        <a href="../index.html" class="text-decoration-none text-secondary small">Home</a>
+        <span class="text-secondary small mx-1">/</span>
+        <a href="index.html" class="text-decoration-none text-secondary small">Documentation</a>
+        <span class="text-secondary small mx-1">/</span>
+        <span class="small text-dark fw-500">Security Best Practices</span>
+      </nav>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <h1 class="section-title text-start mb-0">Documentation</h1>
+        <a href="index.html" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left me-1"></i> Back to Docs</a>
+      </div>
+
+      <div class="feature-card p-4">
+        <div class="doc-content">
+          <h1>Security Best Practices</h1>
+          <p>Make MCP aligns with common MCP security guidance (supply-chain, least privilege, human-in-the-loop, sandboxing). This page summarizes what the platform supports.</p>
+
+          <h2>Security Score (SlowMist Checklist)</h2>
+          <p>Every server has a <strong>security score</strong> (0–100%, grade A–F) based on the <a href="https://github.com/slowmist/MCP-Security-Checklist" target="_blank" rel="noopener noreferrer">SlowMist MCP Security Checklist</a>.</p>
+          <ul>
+            <li><strong>Server Editor → Security</strong> — View your score, grade, and a checklist of criteria. Unmet items show a short reason so you can improve the score.</li>
+            <li><strong>Marketplace</strong> — Published servers show the score on the card and in the inspector's <strong>Security</strong> tab.</li>
+          </ul>
+          <p>The score is computed from configuration we can evaluate (schemas, policies, hints, resources, versioning).</p>
+
+          <h2>What Make MCP Supports</h2>
+          <table>
+            <thead><tr><th>Area</th><th>Feature</th><th>Where</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Tool annotations</strong></td><td>Read-only / Destructive hints</td><td>Tool Editor → Schema → Security hints</td></tr>
+              <tr><td><strong>Policies</strong></td><td>Rate limits, roles, approval rules</td><td>Server → Policies</td></tr>
+              <tr><td><strong>Scoped auth</strong></td><td>Per-tool API keys, OAuth2</td><td>Tool Editor → Config → Auth</td></tr>
+              <tr><td><strong>CLI allowlist</strong></td><td>Restrict which commands run</td><td>Tool Editor → Config → <code>allowed_commands</code></td></tr>
+              <tr><td><strong>Versioning</strong></td><td>Pin to a version, avoid "latest"</td><td>Publish → Versions; generated README</td></tr>
+              <tr><td><strong>Non-root Docker</strong></td><td>Image runs as non-root user</td><td>Generated Dockerfile</td></tr>
+              <tr><td><strong>Logging</strong></td><td>File-based audit trail</td><td><code>MCP_LOG_FILE</code>, <code>run-with-log.mjs</code></td></tr>
+            </tbody>
+          </table>
+
+          <h2>Security Hints (Read-only / Destructive)</h2>
+          <p>In the <strong>Tool Editor</strong>, open the <strong>Schema</strong> tab. Under <strong>Security hints</strong>:</p>
+          <ul>
+            <li><strong>Read-only</strong> — Mark tools that only read data. Gateways can use this to block write operations.</li>
+            <li><strong>Destructive</strong> — Mark tools that modify or delete data. MCP clients can require user confirmation before running.</li>
+          </ul>
+          <p>These are emitted in the generated server so clients and gateways can enforce policy.</p>
+
+          <h2>Full Guide</h2>
+          <p>For a full mapping of MCP security practices to Make MCP (supply-chain, least privilege, human-in-the-loop, sandboxing, gateway, metrics), see <strong>docs/security-best-practices.md</strong> in the repository.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

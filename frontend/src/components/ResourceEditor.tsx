@@ -65,10 +65,14 @@ export default function ResourceEditor({ serverId, resources, onResourceCreated,
         <div className="card-header">
           <h3 className="card-title">Create New Resource</h3>
           <button 
-            className="btn btn-icon btn-secondary"
+            type="button"
+            className="btn btn-outline-primary btn-sm"
             onClick={() => { setShowForm(false); resetForm(); }}
+            title="Return to resources list"
+            style={{ fontWeight: 600 }}
           >
-            <i className="bi bi-x-lg"></i>
+            <i className="bi bi-arrow-left" style={{ marginRight: '0.35rem' }}></i>
+            Back to list
           </button>
         </div>
 

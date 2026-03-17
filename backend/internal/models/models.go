@@ -261,10 +261,11 @@ type TestToolRequest struct {
 }
 
 type TestToolResponse struct {
-	Success  bool            `json:"success"`
-	Output   json.RawMessage `json:"output,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	Duration int64           `json:"duration_ms"`
+	Success         bool                   `json:"success"`
+	Output          json.RawMessage        `json:"output,omitempty"`
+	Error           string                 `json:"error,omitempty"`
+	Duration        int64                  `json:"duration_ms"`
+	InjectedContext map[string]interface{} `json:"injected_context,omitempty"` // context actually passed to the tool (for simulation visibility)
 }
 
 type PolicyEvaluationResult struct {

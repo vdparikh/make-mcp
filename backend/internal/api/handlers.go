@@ -988,6 +988,51 @@ func (h *Handler) DeleteTool(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// mergeSimulatedContext merges request-body context (e.g. from UI test) into extractedCtx so policy and tool see it.
+func mergeSimulatedContext(sim map[string]interface{}, extractedCtx *context.ExtractedContext) {
+	if extractedCtx.Custom == nil {
+		extractedCtx.Custom = make(map[string]interface{})
+	}
+	for k, v := range sim {
+		switch k {
+		case "user_id":
+			if s, ok := v.(string); ok {
+				extractedCtx.UserID = s
+			}
+		case "organization_id":
+			if s, ok := v.(string); ok {
+				extractedCtx.OrganizationID = s
+			}
+		case "session_id":
+			if s, ok := v.(string); ok {
+				extractedCtx.SessionID = s
+			}
+		case "permissions":
+			extractedCtx.Permissions = sliceOfStrings(v)
+		case "roles":
+			extractedCtx.Roles = sliceOfStrings(v)
+		default:
+			extractedCtx.Custom[k] = v
+		}
+	}
+}
+
+func sliceOfStrings(v interface{}) []string {
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []interface{}:
+		var out []string
+		for _, x := range t {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 func (h *Handler) TestTool(c *gin.Context) {
 	id := c.Param("id")
 
@@ -1025,23 +1070,47 @@ func (h *Handler) TestTool(c *gin.Context) {
 		return
 	}
 
+	// Allow request body context for simulation in the UI (overrides/supplements header/JWT-extracted context)
+	if len(req.Context) > 0 {
+		var sim map[string]interface{}
+		if err := json.Unmarshal(req.Context, &sim); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid context JSON"})
+			return
+		}
+		mergeSimulatedContext(sim, extractedCtx)
+		if inputMap == nil {
+			inputMap = make(map[string]interface{})
+		}
+		contextMap, _ := inputMap["context"].(map[string]interface{})
+		if contextMap == nil {
+			contextMap = make(map[string]interface{})
+		}
+		for k, v := range sim {
+			contextMap[k] = v
+		}
+		inputMap["context"] = contextMap
+	}
+
 	policies, _ := h.db.GetPoliciesByTool(c.Request.Context(), tool.ID)
 	h.governance.RegisterPolicies(tool.ID, policies)
 
 	policyResult := h.governance.EvaluatePolicy(tool.ID, inputMap, extractedCtx)
+	injectedForResponse, _ := inputMap["context"].(map[string]interface{})
 	if !policyResult.Allowed {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error":          "Policy violation",
-			"reason":         policyResult.Reason,
-			"violated_rules": policyResult.ViolatedRules,
+			"error":            "Policy violation",
+			"reason":           policyResult.Reason,
+			"violated_rules":   policyResult.ViolatedRules,
+			"injected_context": injectedForResponse,
 		})
 		return
 	}
 
 	if policyResult.RequiresApproval {
 		c.JSON(http.StatusAccepted, gin.H{
-			"status":          "approval_required",
-			"approval_reason": policyResult.ApprovalReason,
+			"status":           "approval_required",
+			"approval_reason":  policyResult.ApprovalReason,
+			"injected_context": injectedForResponse,
 		})
 		return
 	}
@@ -1080,6 +1149,8 @@ func (h *Handler) TestTool(c *gin.Context) {
 
 	h.db.LogToolExecution(c.Request.Context(), exec)
 
+	injectedContext, _ := inputMap["context"].(map[string]interface{})
+
 	if !exec.Success {
 		analysis := h.healing.AnalyzeFailure(exec)
 
@@ -1091,18 +1162,20 @@ func (h *Handler) TestTool(c *gin.Context) {
 		}
 
 		c.JSON(http.StatusOK, models.TestToolResponse{
-			Success:  false,
-			Error:    exec.Error,
-			Duration: duration,
-			Output:   json.RawMessage(fmt.Sprintf(`{"healing_analysis": %s}`, mustMarshal(analysis))),
+			Success:         false,
+			Error:           exec.Error,
+			Duration:        duration,
+			Output:          json.RawMessage(fmt.Sprintf(`{"healing_analysis": %s}`, mustMarshal(analysis))),
+			InjectedContext: injectedContext,
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, models.TestToolResponse{
-		Success:  true,
-		Output:   exec.Output,
-		Duration: duration,
+		Success:         true,
+		Output:          exec.Output,
+		Duration:        duration,
+		InjectedContext: injectedContext,
 	})
 }
 

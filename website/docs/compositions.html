@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Server Compositions — Make MCP Docs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="navbar navbar-expand-lg">
+      <div class="container">
+        <a class="navbar-brand logo" href="../index.html">
+          <span class="logo-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <span class="logo-text">Make MCP</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="nav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-3 gap-lg-4">
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#features">Features</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#quick-start">Get Started</a></li>
+            <li class="nav-item"><a class="nav-link active" href="index.html">Docs</a></li>
+            <li class="nav-item"><a class="nav-link nav-cta btn btn-outline-light btn-sm px-3" href="https://github.com/vdparikh/make-mcp"><i class="bi bi-github me-1"></i> GitHub</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="py-5 doc-page">
+    <div class="container">
+      <nav class="mb-3" aria-label="Breadcrumb">
+        <a href="../index.html" class="text-decoration-none text-secondary small">Home</a>
+        <span class="text-secondary small mx-1">/</span>
+        <a href="index.html" class="text-decoration-none text-secondary small">Documentation</a>
+        <span class="text-secondary small mx-1">/</span>
+        <span class="small text-dark fw-500">Server Compositions</span>
+      </nav>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <h1 class="section-title text-start mb-0">Documentation</h1>
+        <a href="index.html" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left me-1"></i> Back to Docs</a>
+      </div>
+
+      <div class="feature-card p-4">
+        <div class="doc-content">
+          <h1>Server Compositions</h1>
+          <p>Compositions allow you to combine multiple MCP servers into one unified interface.</p>
+
+          <h2>Why Compositions?</h2>
+          <table>
+            <thead><tr><th>Benefit</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Modular Architecture</strong></td><td>Each server handles one domain</td></tr>
+              <tr><td><strong>Reusability</strong></td><td>Share servers across compositions</td></tr>
+              <tr><td><strong>Team Ownership</strong></td><td>Different teams own different servers</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Creating a Composition</h2>
+          <ol>
+            <li>Go to <strong>Compositions</strong> in the sidebar</li>
+            <li>Click <strong>"New Composition"</strong></li>
+            <li>Enter a name and description</li>
+            <li>Select 2+ servers to combine</li>
+            <li>Click <strong>"Create Composition"</strong></li>
+          </ol>
+
+          <h2>Export Options</h2>
+          <p>When exporting a composition:</p>
+          <ul>
+            <li><strong>Prefix Tool Names</strong> — Add server name prefix to avoid conflicts</li>
+            <li><strong>Merge Resources</strong> — Include resources from all servers</li>
+            <li><strong>Merge Prompts</strong> — Include prompts from all servers</li>
+          </ul>
+
+          <h2>Example: Sales Agent</h2>
+          <p>Combine:</p>
+          <ul>
+            <li><code>stripe-mcp</code> — Payment tools</li>
+            <li><code>salesforce-mcp</code> — CRM tools</li>
+            <li><code>slack-mcp</code> — Notification tools</li>
+          </ul>
+          <p>Result: A unified Sales Agent MCP server with all capabilities.</p>
+
+          <h2>Conflict Resolution</h2>
+          <p>If multiple servers have tools with the same name:</p>
+          <ol>
+            <li><strong>Enable "Prefix Tool Names"</strong> — Auto-prefixes with server name</li>
+            <li><strong>Rename before composing</strong> — Edit one server's tool name</li>
+            <li><strong>Exclude duplicate</strong> — Choose which server's tool to use</li>
+          </ol>
+
+          <h2>Best Practices</h2>
+          <ol>
+            <li><strong>Use unique tool names</strong> — Avoid conflicts</li>
+            <li><strong>Document your servers</strong> — Clear descriptions</li>
+            <li><strong>Version your compositions</strong> — Track changes</li>
+            <li><strong>Test after composing</strong> — Verify all tools work</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

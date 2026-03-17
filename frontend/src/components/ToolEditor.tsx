@@ -10,6 +10,8 @@ interface Props {
   onToolCreated: () => void;
   onToolDeleted: (id: string) => void;
   focusToolId?: string | null;
+  /** Called when user closes the Edit Tool view (e.g. X) so parent can clear focus and show tools list */
+  onCloseEdit?: () => void;
 }
 
 type AuthType = 'none' | 'api_key' | 'bearer_token' | 'basic_auth' | 'oauth2';
@@ -187,7 +189,7 @@ const authTypes: { value: AuthType; label: string; icon: string; description: st
   { value: 'oauth2', label: 'OAuth 2.0', icon: 'bi-shield-check', description: 'Client credentials flow' },
 ];
 
-export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted, focusToolId }: Props) {
+export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted, focusToolId, onCloseEdit }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'auth' | 'schema' | 'config'>('basic');
@@ -593,6 +595,9 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
 
   const renderAuthConfig = () => (
     <div>
+      <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+        All auth fields support <code style={{ background: 'var(--hover-bg)', padding: '0.125rem 0.375rem', borderRadius: '4px' }}>{'{{ENV_VAR_NAME}}'}</code> — the generated server reads the value from the environment at runtime.
+      </p>
       <div style={{ marginBottom: '1.5rem' }}>
         <label className="form-label">Authentication Type</label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
@@ -821,10 +826,17 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
             {editingTool ? 'Edit Tool' : 'Create New Tool'}
           </h3>
           <button 
-            className="btn btn-icon btn-secondary"
-            onClick={() => { setShowForm(false); resetForm(); }}
+            className="btn btn-outline-primary btn-sm"
+            onClick={() => {
+              setShowForm(false);
+              resetForm();
+              if (editingTool) onCloseEdit?.();
+            }}
+            title="Return to tools list"
+            style={{ fontWeight: 600 }}
           >
-            <i className="bi bi-x-lg"></i>
+            <i className="bi bi-arrow-left" style={{ marginRight: '0.35rem' }}></i>
+            Back to list
           </button>
         </div>
 

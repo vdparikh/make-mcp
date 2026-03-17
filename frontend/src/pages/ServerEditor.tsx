@@ -859,37 +859,40 @@ export default function ServerEditor() {
 
           {activeTab === 'tools' && (
             <div>
-              <div style={{ 
-                marginBottom: '1rem', 
-                padding: '1rem', 
-                background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.15), rgba(56, 189, 248, 0.1))',
-                borderRadius: '12px',
-                border: '1px solid rgba(129, 140, 248, 0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div>
-                  <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '0.9375rem' }}>
-                    <i className="bi bi-diagram-3" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
-                    Try the Visual Builder
-                  </h4>
-                  <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
-                    Build tool pipelines with drag-and-drop nodes - like Zapier or Langflow
-                  </p>
+              {!focusedToolId && (
+                <div style={{
+                  marginBottom: '1rem',
+                  padding: '1rem',
+                  background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.15), rgba(56, 189, 248, 0.1))',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(129, 140, 248, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div>
+                    <h4 style={{ margin: 0, color: 'var(--text-primary)', fontSize: '0.9375rem' }}>
+                      <i className="bi bi-diagram-3" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+                      Visual Builder (pipelines only)
+                    </h4>
+                    <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
+                      Build multi-tool pipelines with drag-and-drop — not for editing a single tool.
+                    </p>
+                  </div>
+                  <button 
+                    className="btn btn-primary btn-sm"
+                    onClick={() => navigate(`/servers/${id}/flow`)}
+                  >
+                    <i className="bi bi-box-arrow-up-right"></i>
+                    Open Visual Builder
+                  </button>
                 </div>
-                <button 
-                  className="btn btn-primary btn-sm"
-                  onClick={() => navigate(`/servers/${id}/flow`)}
-                >
-                  <i className="bi bi-box-arrow-up-right"></i>
-                  Open Visual Builder
-                </button>
-              </div>
+              )}
               <ToolEditor
                 serverId={id!}
                 tools={server.tools || []}
                 focusToolId={focusedToolId}
+                onCloseEdit={() => setFocusedToolId(null)}
                 onToolCreated={loadServer}
                 onToolDeleted={handleDeleteTool}
               />
@@ -1046,7 +1049,7 @@ export default function ServerEditor() {
               background: 'var(--card-bg)',
               borderRadius: '12px',
               width: '100%',
-              maxWidth: '900px',
+              maxWidth: '80%',
               maxHeight: '90vh',
               overflow: 'auto',
               boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)',

@@ -287,13 +287,14 @@ export default function TestPlayground({ tools }: Props) {
         toast.warning('Tool execution failed - check healing suggestions');
       }
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { error?: string; reason?: string; violated_rules?: string[] } } };
+      const err = error as { response?: { data?: { error?: string; reason?: string; violated_rules?: string[]; injected_context?: Record<string, unknown> } } };
       if (err.response?.data?.error === 'Policy violation') {
         setResult({
           success: false,
           error: `Policy Violation: ${err.response.data.reason}`,
           output: { violated_rules: err.response.data.violated_rules },
           duration_ms: 0,
+          injected_context: err.response.data.injected_context,
         });
         toast.error('Policy violation - action blocked');
       } else {
@@ -508,6 +509,24 @@ export default function TestPlayground({ tools }: Props) {
                   </div>
                 </div>
               </div>
+
+              {result.injected_context && Object.keys(result.injected_context).length > 0 && (
+                <div style={{ 
+                  background: 'var(--hover-bg)', 
+                  border: '1px solid var(--card-border)', 
+                  borderRadius: '8px', 
+                  padding: '0.75rem 1rem', 
+                  marginBottom: '1rem' 
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.375rem' }}>
+                    <i className="bi bi-person-badge" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+                    Context passed to tool
+                  </div>
+                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.75rem' }}>
+                    {JSON.stringify(result.injected_context, null, 2)}
+                  </pre>
+                </div>
+              )}
 
               {result.error && (
                 <div style={{ 

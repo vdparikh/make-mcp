@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Creating Servers — Make MCP Docs</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="navbar navbar-expand-lg">
+      <div class="container">
+        <a class="navbar-brand logo" href="../index.html">
+          <span class="logo-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <span class="logo-text">Make MCP</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="nav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-3 gap-lg-4">
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#features">Features</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#quick-start">Get Started</a></li>
+            <li class="nav-item"><a class="nav-link active" href="index.html">Docs</a></li>
+            <li class="nav-item"><a class="nav-link nav-cta btn btn-outline-light btn-sm px-3" href="https://github.com/vdparikh/make-mcp"><i class="bi bi-github me-1"></i> GitHub</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="py-5 doc-page">
+    <div class="container">
+      <nav class="mb-3" aria-label="Breadcrumb">
+        <a href="../index.html" class="text-decoration-none text-secondary small">Home</a>
+        <span class="text-secondary small mx-1">/</span>
+        <a href="index.html" class="text-decoration-none text-secondary small">Documentation</a>
+        <span class="text-secondary small mx-1">/</span>
+        <span class="small text-dark fw-500">Creating Servers</span>
+      </nav>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <h1 class="section-title text-start mb-0">Documentation</h1>
+        <a href="index.html" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-left me-1"></i> Back to Docs</a>
+      </div>
+
+      <div class="feature-card p-4">
+        <div class="doc-content">
+          <h1>Creating Servers</h1>
+          <p>This guide covers everything you need to know about creating MCP servers.</p>
+
+          <h2>Server Configuration</h2>
+          <p>Every server has:</p>
+          <ul>
+            <li><strong>Name</strong> — Identifier for your server</li>
+            <li><strong>Description</strong> — What your server does</li>
+            <li><strong>Version</strong> — Semantic version (e.g., 1.0.0)</li>
+          </ul>
+
+          <h2>Tools</h2>
+          <p>Tools are functions that AI agents can call.</p>
+
+          <h3>Execution Types</h3>
+          <table>
+            <thead><tr><th>Type</th><th>Use Case</th></tr></thead>
+            <tbody>
+              <tr><td>rest_api</td><td>Call external HTTP APIs</td></tr>
+              <tr><td>graphql</td><td>Query GraphQL endpoints</td></tr>
+              <tr><td>cli</td><td>Run shell commands (kubectl, docker, terraform; use <code>allowed_commands</code>)</td></tr>
+              <tr><td>database</td><td>Execute SQL queries</td></tr>
+              <tr><td>javascript</td><td>Custom JS logic</td></tr>
+              <tr><td>python</td><td>Custom Python scripts</td></tr>
+              <tr><td>webhook</td><td>Send data to webhooks</td></tr>
+              <tr><td>flow</td><td>Visual pipeline: build in Visual Builder, then Convert to Tool</td></tr>
+            </tbody>
+          </table>
+
+          <h3>Input/Output Schemas</h3>
+          <p>Use JSON Schema to define inputs and outputs:</p>
+          <pre><code>{
+  "type": "object",
+  "properties": {
+    "query": { "type": "string", "description": "Search query" },
+    "limit": { "type": "integer", "default": 10 }
+  },
+  "required": ["query"]
+}</code></pre>
+          <p><strong>Pro Tip:</strong> Use the <strong>"Generate from Sample"</strong> button to auto-generate schemas from example JSON!</p>
+
+          <h3>Authentication</h3>
+          <p>Tools can use various auth methods:</p>
+          <ul>
+            <li><strong>API Key</strong> — Header-based API keys</li>
+            <li><strong>Bearer Token</strong> — JWT or OAuth tokens</li>
+            <li><strong>Basic Auth</strong> — Username/password</li>
+            <li><strong>OAuth 2.0</strong> — Client credentials flow</li>
+          </ul>
+
+          <h2>Resources</h2>
+          <p>Resources provide structured data endpoints:</p>
+          <pre><code>Resource: company_docs
+URI: mcp://docs/company
+MIME Type: application/json</code></pre>
+
+          <h2>Prompts</h2>
+          <p>Prompts are templated instructions:</p>
+          <pre><code>Name: summarize_document
+
+Template:
+"Summarize the following document:
+{{document}}"</code></pre>
+
+          <h2>Context Engine</h2>
+          <p>Inject user context automatically:</p>
+          <ul>
+            <li>User ID</li>
+            <li>Organization ID</li>
+            <li>Roles &amp; Permissions</li>
+          </ul>
+
+          <h2>Policies</h2>
+          <p>Apply governance rules to tools:</p>
+          <ul>
+            <li>Require approval for sensitive actions</li>
+            <li>Set maximum values</li>
+            <li>Restrict to specific roles</li>
+            <li>Limit to business hours</li>
+            <li>Rate limiting</li>
+          </ul>
+
+          <h2>Visual Flow Builder</h2>
+          <p>Build tool pipelines visually:</p>
+          <ol>
+            <li>Go to <strong>Tools</strong> tab</li>
+            <li>Click <strong>"Open Visual Builder"</strong></li>
+            <li>Drag and drop nodes</li>
+            <li>Connect them to create flows</li>
+            <li>Save and convert to a tool</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

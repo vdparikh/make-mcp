@@ -272,6 +272,8 @@ export interface TestToolResponse {
   output?: Record<string, unknown>;
   error?: string;
   duration_ms: number;
+  /** Context actually passed to the tool (for simulation visibility) */
+  injected_context?: Record<string, unknown>;
 }
 
 export interface SchemaField {

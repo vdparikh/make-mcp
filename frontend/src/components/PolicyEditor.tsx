@@ -15,6 +15,7 @@ const ruleTypes: { value: PolicyRuleType; label: string; icon: string; descripti
   { value: 'allowed_roles', label: 'Allowed Roles', icon: 'bi-people', description: 'Restrict to specific user roles' },
   { value: 'time_window', label: 'Time Window', icon: 'bi-clock', description: 'Allow only during specific hours' },
   { value: 'rate_limit', label: 'Rate Limit', icon: 'bi-speedometer2', description: 'Limit number of calls' },
+  { value: 'custom', label: 'Custom', icon: 'bi-code-slash', description: 'Advanced JSON config' },
 ];
 
 const ruleTemplates: Record<PolicyRuleType, string> = {
@@ -227,6 +228,9 @@ export default function PolicyEditor({ tools, onPolicyUpdated }: Props) {
 
             <div className="form-group">
               <label className="form-label">Add Rules</label>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                Allowed rule types: Require Approval, Max Value, Allowed Roles, Time Window, Rate Limit. Custom is available for advanced JSON config.
+              </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
                 {ruleTypes.map((type) => (
                   <button
