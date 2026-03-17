@@ -4,6 +4,8 @@ import Editor from '@monaco-editor/react';
 import type { Tool, ExecutionType } from '../types';
 import { createTool, updateTool } from '../services/api';
 
+export type ToolSection = 'policies' | 'testing' | 'healing';
+
 interface Props {
   serverId: string;
   tools: Tool[];
@@ -12,6 +14,8 @@ interface Props {
   focusToolId?: string | null;
   /** Called when user closes the Edit Tool view (e.g. X) so parent can clear focus and show tools list */
   onCloseEdit?: () => void;
+  /** When user clicks a tool-specific section card, navigate to that section with this tool pre-selected */
+  onNavigateToSection?: (section: ToolSection, toolId: string) => void;
 }
 
 type AuthType = 'none' | 'api_key' | 'bearer_token' | 'basic_auth' | 'oauth2';
@@ -189,7 +193,7 @@ const authTypes: { value: AuthType; label: string; icon: string; description: st
   { value: 'oauth2', label: 'OAuth 2.0', icon: 'bi-shield-check', description: 'Client credentials flow' },
 ];
 
-export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted, focusToolId, onCloseEdit }: Props) {
+export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted, focusToolId, onCloseEdit, onNavigateToSection }: Props) {
   const [showForm, setShowForm] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'auth' | 'schema' | 'config'>('basic');
@@ -820,6 +824,7 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
     ] as const;
 
     return (
+      <div>
       <div className="card">
         <div className="card-header">
           <h3 className="card-title">
@@ -853,6 +858,8 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
             </button>
           ))}
         </div>
+
+        
 
         <form onSubmit={handleSubmit}>
           {activeTab === 'basic' && (
@@ -1111,12 +1118,12 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
                       CLI Configuration Options
                     </h5>
                     <ul style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', margin: 0, paddingLeft: '1.25rem' }}>
-                      <li><code style={{ color: '#a5f3fc' }}>command</code> - Shell command with {'{{variable}}'} placeholders</li>
-                      <li><code style={{ color: '#a5f3fc' }}>timeout</code> - Max execution time in ms (default: 30000)</li>
-                      <li><code style={{ color: '#a5f3fc' }}>working_dir</code> - Working directory for command</li>
-                      <li><code style={{ color: '#a5f3fc' }}>shell</code> - Shell to use (default: /bin/bash)</li>
-                      <li><code style={{ color: '#a5f3fc' }}>allowed_commands</code> - Whitelist of allowed base commands</li>
-                      <li><code style={{ color: '#a5f3fc' }}>env</code> - Additional environment variables</li>
+                      <li><code style={{  }}>command</code> - Shell command with {'{{variable}}'} placeholders</li>
+                      <li><code style={{  }}>timeout</code> - Max execution time in ms (default: 30000)</li>
+                      <li><code style={{  }}>working_dir</code> - Working directory for command</li>
+                      <li><code style={{  }}>shell</code> - Shell to use (default: /bin/bash)</li>
+                      <li><code style={{  }}>allowed_commands</code> - Whitelist of allowed base commands</li>
+                      <li><code style={{  }}>env</code> - Additional environment variables</li>
                     </ul>
                   </div>
                 )}
@@ -1279,6 +1286,38 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
             </div>
           </div>
         )}
+      </div>
+
+      {editingTool && onNavigateToSection && (
+          <div className='p-3 bg-white rounded-3 shadow-sm' style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', alignSelf: 'center', marginRight: '0.25rem' }}>For this tool:</span>
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => onNavigateToSection('policies', editingTool.id)}
+            >
+              <i className="bi bi-shield-check" style={{ marginRight: '0.35rem' }}></i>
+              Policies
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => onNavigateToSection('testing', editingTool.id)}
+            >
+              <i className="bi bi-play-circle" style={{ marginRight: '0.35rem' }}></i>
+              Testing
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => onNavigateToSection('healing', editingTool.id)}
+            >
+              <i className="bi bi-bandaid" style={{ marginRight: '0.35rem' }}></i>
+              Healing
+            </button>
+          </div>
+        )}
+
       </div>
     );
   }

@@ -260,7 +260,7 @@ body {
 
 .card-description {
   color: var(--text-secondary);
-  font-size: 0.8125rem;
+  font-size: 0.85rem;
   margin: 0.375rem 0 0;
   line-height: 1.5;
   display: -webkit-box;
@@ -516,12 +516,12 @@ select.form-control {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(4px);
 }
 
 .modal-content {

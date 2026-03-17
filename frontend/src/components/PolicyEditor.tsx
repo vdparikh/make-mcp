@@ -6,6 +6,7 @@ import { createPolicy, getToolPolicies, deletePolicy } from '../services/api';
 
 interface Props {
   tools: Tool[];
+  initialToolId?: string;
   onPolicyUpdated: () => void;
 }
 
@@ -27,7 +28,7 @@ const ruleTemplates: Record<PolicyRuleType, string> = {
   custom: '{}',
 };
 
-export default function PolicyEditor({ tools, onPolicyUpdated }: Props) {
+export default function PolicyEditor({ tools, initialToolId, onPolicyUpdated }: Props) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -37,6 +38,12 @@ export default function PolicyEditor({ tools, onPolicyUpdated }: Props) {
   const [policyDescription, setPolicyDescription] = useState('');
   const [rules, setRules] = useState<{ type: PolicyRuleType; config: string; failAction: string }[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (initialToolId && tools.some((t) => t.id === initialToolId)) {
+      setSelectedTool(initialToolId);
+    }
+  }, [initialToolId, tools]);
 
   useEffect(() => {
     if (selectedTool) {

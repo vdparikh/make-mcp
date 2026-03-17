@@ -5,13 +5,20 @@ import { getToolExecutions, getHealingSuggestions } from '../services/api';
 
 interface Props {
   tools: Tool[];
+  initialToolId?: string;
 }
 
-export default function HealingDashboard({ tools }: Props) {
+export default function HealingDashboard({ tools, initialToolId }: Props) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [executions, setExecutions] = useState<ToolExecution[]>([]);
   const [suggestions, setSuggestions] = useState<HealingSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialToolId && tools.some((t) => t.id === initialToolId)) {
+      setSelectedTool(initialToolId);
+    }
+  }, [initialToolId, tools]);
 
   useEffect(() => {
     if (selectedTool) {
@@ -75,11 +82,11 @@ export default function HealingDashboard({ tools }: Props) {
             <i className="bi bi-magic" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
             Auto-Detection Examples
           </h4>
-          <ul style={{ color: '#e2e8f0', fontSize: '0.8125rem', margin: 0, paddingLeft: '1.25rem' }}>
-            <li><strong style={{ color: '#fca5a5' }}>401 Unauthorized</strong> → Suggests: <span style={{ color: '#86efac' }}>Refresh OAuth token</span></li>
-            <li><strong style={{ color: '#fcd34d' }}>429 Rate Limited</strong> → Suggests: <span style={{ color: '#86efac' }}>Retry with exponential backoff</span></li>
-            <li><strong style={{ color: '#c4b5fd' }}>Schema mismatch</strong> → Suggests: <span style={{ color: '#86efac' }}>Update tool schema</span></li>
-            <li><strong style={{ color: '#a5f3fc' }}>Timeout</strong> → Suggests: <span style={{ color: '#86efac' }}>Extend timeout, optimize query</span></li>
+          <ul style={{  fontSize: '0.8125rem', margin: 0, paddingLeft: '1.25rem' }}>
+            <li><strong style={{ color: '#fca5a5' }}>401 Unauthorized</strong> → Suggests: <span style={{ color: '#666' }}>Refresh OAuth token</span></li>
+            <li><strong style={{ color: '#fcd34d' }}>429 Rate Limited</strong> → Suggests: <span style={{ color: '#666' }}>Retry with exponential backoff</span></li>
+            <li><strong style={{ color: '#c4b5fd' }}>Schema mismatch</strong> → Suggests: <span style={{ color: '#666' }}>Update tool schema</span></li>
+            <li><strong style={{ color: '#336699' }}>Timeout</strong> → Suggests: <span style={{ color: '#666' }}>Extend timeout, optimize query</span></li>
           </ul>
         </div>
       </div>

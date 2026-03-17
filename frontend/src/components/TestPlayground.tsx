@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { toast } from 'react-toastify';
 import Editor from '@monaco-editor/react';
 import type { Tool, TestToolResponse, MCPAppPayload } from '../types';
@@ -240,14 +240,38 @@ function MCPAppTableWidget({ payload }: { payload: Extract<MCPAppPayload, { widg
 
 interface Props {
   tools: Tool[];
+  initialToolId?: string;
 }
 
-export default function TestPlayground({ tools }: Props) {
+export default function TestPlayground({ tools, initialToolId }: Props) {
   const [selectedTool, setSelectedTool] = useState<string>('');
   const [input, setInput] = useState('{\n  \n}');
   const [context, setContext] = useState('{\n  "user_id": "user-123",\n  "organization_id": "org-456",\n  "roles": ["user"]\n}');
   const [result, setResult] = useState<TestToolResponse | null>(null);
   const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    if (initialToolId && tools.some((t) => t.id === initialToolId)) {
+      setSelectedTool(initialToolId);
+      const tool = tools.find((t) => t.id === initialToolId);
+      if (tool?.input_schema) {
+        const schema = tool.input_schema as { properties?: Record<string, { type: string }> };
+        const exampleInput: Record<string, unknown> = {};
+        if (schema.properties) {
+          Object.entries(schema.properties).forEach(([key, value]) => {
+            switch (value.type) {
+              case 'string': exampleInput[key] = ''; break;
+              case 'number': exampleInput[key] = 0; break;
+              case 'boolean': exampleInput[key] = false; break;
+              default: exampleInput[key] = null;
+            }
+          });
+        }
+        setInput(JSON.stringify(exampleInput, null, 2));
+      }
+      setResult(null);
+    }
+  }, [initialToolId, tools]);
 
   const selectedToolData = tools.find(t => t.id === selectedTool);
   

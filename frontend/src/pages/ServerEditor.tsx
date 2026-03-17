@@ -19,7 +19,7 @@ import {
   getServerObservability,
   enableServerObservability,
 } from '../services/api';
-import ToolEditor from '../components/ToolEditor';
+import ToolEditor, { type ToolSection } from '../components/ToolEditor';
 import ResourceEditor from '../components/ResourceEditor';
 import PromptEditor from '../components/PromptEditor';
 import ContextConfigEditor from '../components/ContextConfigEditor';
@@ -303,6 +303,7 @@ export default function ServerEditor() {
   const [focusedToolId, setFocusedToolId] = useState<string | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const [preselectedToolId, setPreselectedToolId] = useState<string | null>(null);
 
   // Clear tree selection when switching away from that section
   useEffect(() => {
@@ -315,6 +316,7 @@ export default function ServerEditor() {
     if (activeTab !== 'prompts' && selectedPromptId) {
       setSelectedPromptId(null);
     }
+    setPreselectedToolId(null);
   }, [activeTab]);
 
   useEffect(() => {
@@ -893,6 +895,10 @@ export default function ServerEditor() {
                 tools={server.tools || []}
                 focusToolId={focusedToolId}
                 onCloseEdit={() => setFocusedToolId(null)}
+                onNavigateToSection={(section: ToolSection, toolId: string) => {
+                  setPreselectedToolId(toolId);
+                  setActiveTab(section);
+                }}
                 onToolCreated={loadServer}
                 onToolDeleted={handleDeleteTool}
               />
@@ -930,6 +936,7 @@ export default function ServerEditor() {
           {activeTab === 'policies' && (
             <PolicyEditor
               tools={server.tools || []}
+              initialToolId={preselectedToolId ?? undefined}
               onPolicyUpdated={loadServer}
             />
           )}
@@ -941,12 +948,14 @@ export default function ServerEditor() {
           {activeTab === 'testing' && (
             <TestPlayground
               tools={server.tools || []}
+              initialToolId={preselectedToolId ?? undefined}
             />
           )}
 
           {activeTab === 'healing' && (
             <HealingDashboard
               tools={server.tools || []}
+              initialToolId={preselectedToolId ?? undefined}
             />
           )}
 
