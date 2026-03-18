@@ -175,6 +175,7 @@ Make MCP supports hosted MCP deployment from the Deploy modal via **Publish MCP*
 - **Snapshot model**: each hosted publish creates a hosted-only snapshot record (separate from normal semantic release versions)
 - **Runtime source**: generated server files are written under `backend/generated-servers/<user>/<server>/<hosted-snapshot>/` and mounted into the container
 - **Observability**: backend injects runtime env (`MCP_OBSERVABILITY_*`) into hosted containers; for URL-based hosted servers, container env is the source of truth
+- **Manifest**: each hosted snapshot includes a formal `manifest.json` in its generated folder (runtime/image/tools/auth/resources/prompts/observability)
 
 In the Deploy UI, Hosted status shows explicit runtime metadata:
 
@@ -182,6 +183,24 @@ In the Deploy UI, Hosted status shows explicit runtime metadata:
 - container started-at time
 - last ensured time
 - hosted URL and MCP config
+
+Example hosted manifest:
+
+```json
+{
+  "name": "Demo API Toolkit",
+  "snapshot_version": "hosted-1773848702093159000",
+  "server_version": "1.0.0",
+  "runtime": "docker",
+  "image": "node:20-alpine",
+  "endpoint": "/api/users/<user_id>/<server_slug>",
+  "tools": [
+    { "name": "get_country_info", "execution_type": "rest_api" }
+  ],
+  "auth": { "type": "none" },
+  "observability": true
+}
+```
 
 ## Documentation
 

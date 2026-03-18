@@ -205,6 +205,25 @@ type ToolExecution struct {
 	CreatedAt        time.Time       `json:"created_at"`
 }
 
+// HostedSession tracks runtime state for hosted MCP containers.
+type HostedSession struct {
+	ID              string     `json:"id"`
+	UserID          string     `json:"user_id"`
+	ServerID        string     `json:"server_id"`
+	SnapshotVersion string     `json:"snapshot_version,omitempty"`
+	ContainerID     string     `json:"container_id,omitempty"`
+	HostPort        string     `json:"host_port,omitempty"`
+	Status          string     `json:"status"`        // running|starting|stopped|error
+	Health          string     `json:"health"`        // healthy|unhealthy|unknown
+	LastUsedAt      *time.Time `json:"last_used_at,omitempty"`
+	LastEnsuredAt   *time.Time `json:"last_ensured_at,omitempty"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	StoppedAt       *time.Time `json:"stopped_at,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
 // HealingSuggestion represents an auto-repair suggestion
 type HealingSuggestion struct {
 	ID             string          `json:"id"`

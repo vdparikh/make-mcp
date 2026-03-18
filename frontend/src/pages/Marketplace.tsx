@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Server, ServerVersion, Tool, Resource, Prompt, SecurityScoreResult } from '../types';
-import { listMarketplace, getMarketplaceServer, downloadMarketplaceServer } from '../services/api';
+import { listMarketplace, getMarketplaceServer, downloadMarketplaceServer, marketplaceHostedDeploy, marketplaceHostedStatus } from '../services/api';
+import DeployOptionsModal from '../components/DeployOptionsModal';
 
 type InspectorTab = 'tools' | 'resources' | 'prompts' | 'versions' | 'security';
 
@@ -12,6 +13,8 @@ export default function Marketplace() {
   const [versions, setVersions] = useState<ServerVersion[]>([]);
   const [securityScore, setSecurityScore] = useState<SecurityScoreResult | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [deployServer, setDeployServer] = useState<Server | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('tools');
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
@@ -69,6 +72,11 @@ export default function Marketplace() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  const openDeploy = (server: Server) => {
+    setDeployServer(server);
+    setShowDeployModal(true);
   };
 
   const formatDate = (dateString: string) => {
@@ -139,7 +147,7 @@ export default function Marketplace() {
           </nav>
           <h1 className="page-title">Marketplace</h1>
           <p className="page-subtitle">
-            Browse and download published MCP servers from the community
+            Browse, inspect, and deploy published MCP servers from the community
           </p>
         </div>
       </div>
@@ -208,12 +216,11 @@ export default function Marketplace() {
                 >
                   <i className="bi bi-eye"></i> Inspect
                 </button>
-                <button 
+                <button
                   className="btn btn-primary"
-                  onClick={() => handleDownload(server.id, server.name)}
-                  disabled={downloading}
+                  onClick={() => openDeploy(server)}
                 >
-                  <i className="bi bi-download"></i> Download
+                  <i className="bi bi-cloud-arrow-up"></i> Deploy
                 </button>
               </div>
             </div>
@@ -307,14 +314,13 @@ export default function Marketplace() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <button 
+                <button
                   className="btn btn-primary"
-                  onClick={() => handleDownload(selectedServer.id, selectedServer.name)}
-                  disabled={downloading}
+                  onClick={() => openDeploy(selectedServer)}
                   style={{ padding: '0.5rem 1rem' }}
                 >
-                  <i className="bi bi-download"></i>
-                  {downloading ? 'Downloading...' : 'Download'}
+                  <i className="bi bi-cloud-arrow-up"></i>
+                  Deploy
                 </button>
                 <button 
                   onClick={() => setShowModal(false)}
@@ -905,6 +911,18 @@ export default function Marketplace() {
           </div>
         </div>
       )}
+      <DeployOptionsModal
+        open={showDeployModal && !!deployServer}
+        title={deployServer?.name || 'Marketplace Server'}
+        artifactLabel="marketplace server"
+        downloading={downloading}
+        onClose={() => setShowDeployModal(false)}
+        onDownloadZip={() => handleDownload(deployServer!.id, deployServer!.name)}
+        onHostedPublish={deployServer ? async () => {
+          return marketplaceHostedDeploy(deployServer.id);
+        } : undefined}
+        onHostedStatus={deployServer ? async () => marketplaceHostedStatus(deployServer.id) : undefined}
+      />
     </div>
   );
 }

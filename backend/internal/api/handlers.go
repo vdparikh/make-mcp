@@ -47,7 +47,7 @@ type Handler struct {
 
 // NewHandler creates a new API handler
 func NewHandler(db *database.DB, wa *webauthnlib.WebAuthn, sessionStore *webauthnpkg.SessionStore) *Handler {
-	hm, _ := hosted.NewManager()
+	hm, _ := hosted.NewManager(db)
 	return &Handler{
 		db:            db,
 		generator:     generator.NewGenerator(),
@@ -106,12 +106,22 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		// Observability: dashboard (auth) and ingestion (key-based, no JWT)
 		api.GET("/observability", h.AuthMiddleware(), h.GetObservability)
 		api.POST("/observability/events", h.IngestObservabilityEvents)
+		hostedSessions := api.Group("/hosted")
+		hostedSessions.Use(h.AuthMiddleware())
+		{
+			hostedSessions.GET("/sessions", h.ListHostedSessions)
+			hostedSessions.GET("/sessions/:server_id/health", h.GetHostedSessionHealth)
+			hostedSessions.POST("/sessions/:server_id/restart", h.RestartHostedSession)
+			hostedSessions.POST("/sessions/:server_id/stop", h.StopHostedSession)
+		}
 
 		marketplace := api.Group("/marketplace")
 		{
 			marketplace.GET("", h.ListMarketplace)
 			marketplace.GET("/:id", h.GetMarketplaceServer)
 			marketplace.GET("/:id/download", h.DownloadMarketplaceServer)
+			marketplace.POST("/:id/hosted-deploy", h.AuthMiddleware(), h.MarketplaceHostedDeploy)
+			marketplace.GET("/:id/hosted-status", h.AuthMiddleware(), h.MarketplaceHostedStatus)
 		}
 
 		contextConfigs := api.Group("/context-configs")
@@ -163,6 +173,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			compositions.PUT("/:id", h.UpdateComposition)
 			compositions.DELETE("/:id", h.DeleteComposition)
 			compositions.POST("/:id/export", h.ExportComposition)
+			compositions.POST("/:id/hosted-deploy", h.HostedDeployComposition)
+			compositions.GET("/:id/hosted-status", h.CompositionHostedStatus)
 		}
 
 		// Flows
@@ -890,8 +902,14 @@ type HostedStatusResponse struct {
 	LastEnsuredAt   string `json:"last_ensured_at,omitempty"`
 	Endpoint        string `json:"endpoint,omitempty"`
 	MCPConfig       string `json:"mcp_config,omitempty"`
+	Manifest        json.RawMessage `json:"manifest,omitempty"`
 	ContainerID string `json:"container_id,omitempty"`
 	HostPort   string `json:"host_port,omitempty"`
+}
+
+type HostedSessionListItem struct {
+	models.HostedSession
+	ServerName string `json:"server_name,omitempty"`
 }
 
 // HostedPublish publishes the latest hosted snapshot and makes it available at /api/users/:user_id/:server_slug.
@@ -961,7 +979,7 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
 	endpoint := baseURL + "/users/" + userID + "/" + slug
 
-	mcpConfigBytes, err := h.buildHostedMCPConfig(c, slug, endpoint, observabilityEnv)
+	mcpConfigBytes, err := h.buildHostedMCPConfig(slug, endpoint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build mcp config"})
 		return
@@ -1046,18 +1064,9 @@ func (h *Handler) hostedObservabilityEnv(c *gin.Context, server *models.Server) 
 	return env
 }
 
-func (h *Handler) buildHostedMCPConfig(c *gin.Context, slug, endpoint string, observabilityEnv map[string]string) ([]byte, error) {
+func (h *Handler) buildHostedMCPConfig(slug, endpoint string) ([]byte, error) {
 	serverConfig := map[string]interface{}{
 		"url": endpoint,
-	}
-	if obsKey := strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_KEY"]); obsKey != "" {
-		serverConfig["env"] = map[string]string{
-			"MCP_OBSERVABILITY_ENDPOINT":     h.hostedObservabilityEndpoint(c),
-			"MCP_OBSERVABILITY_KEY":          obsKey,
-			"MCP_OBSERVABILITY_USER_ID":      strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_USER_ID"]),
-			"MCP_OBSERVABILITY_CLIENT_AGENT": "Cursor",
-			"MCP_OBSERVABILITY_USER_TOKEN":   "",
-		}
 	}
 	return json.MarshalIndent(map[string]interface{}{
 		"mcpServers": map[string]interface{}{
@@ -1091,13 +1100,23 @@ func (h *Handler) HostedStatus(c *gin.Context) {
 		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
 		return
 	}
+	resp, err := h.buildHostedStatusResponse(c, server, userID, cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *Handler) buildHostedStatusResponse(c *gin.Context, server *models.Server, userID string, cfg *hosted.ContainerConfig) (HostedStatusResponse, error) {
+	if server == nil || cfg == nil || strings.TrimSpace(userID) == "" {
+		return HostedStatusResponse{}, fmt.Errorf("server, cfg, and userID are required")
+	}
 	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
 	slug := database.ServerSlug(server.Name)
-	obsEnv := h.hostedObservabilityEnv(c, server)
-	mcpConfigBytes, err := h.buildHostedMCPConfig(c, slug, baseURL+"/users/"+userID+"/"+slug, obsEnv)
+	mcpConfigBytes, err := h.buildHostedMCPConfig(slug, baseURL+"/users/"+userID+"/"+slug)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build mcp config"})
-		return
+		return HostedStatusResponse{}, fmt.Errorf("failed to build mcp config: %w", err)
 	}
 	startedAt := ""
 	if !cfg.StartedAt.IsZero() {
@@ -1113,7 +1132,8 @@ func (h *Handler) HostedStatus(c *gin.Context) {
 		snapshotID = sv.ID
 		snapshotVersion = sv.Version
 	}
-	c.JSON(http.StatusOK, HostedStatusResponse{
+	manifest, _ := loadHostedManifest(userID, server.ID, cfg.Version)
+	return HostedStatusResponse{
 		Running:         true,
 		UserID:          userID,
 		ServerID:        server.ID,
@@ -1125,9 +1145,133 @@ func (h *Handler) HostedStatus(c *gin.Context) {
 		LastEnsuredAt:   lastEnsuredAt,
 		Endpoint:        baseURL + "/users/" + userID + "/" + slug,
 		MCPConfig:       string(mcpConfigBytes),
+		Manifest:        manifest,
 		ContainerID:     cfg.ContainerID,
 		HostPort:        cfg.HostPort,
-	})
+	}, nil
+}
+
+func (h *Handler) ListHostedSessions(c *gin.Context) {
+	userID := h.currentUserID(c)
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusOK, gin.H{"sessions": []HostedSessionListItem{}})
+		return
+	}
+	sessions, err := h.hostedMgr.ListSessions(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	items := make([]HostedSessionListItem, 0, len(sessions))
+	for _, s := range sessions {
+		serverName := s.ServerID
+		if srv, srvErr := h.db.GetServer(c.Request.Context(), s.ServerID); srvErr == nil && srv != nil {
+			serverName = srv.Name
+		}
+		items = append(items, HostedSessionListItem{
+			HostedSession: s,
+			ServerName:    serverName,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"sessions": items})
+}
+
+func (h *Handler) GetHostedSessionHealth(c *gin.Context) {
+	serverID := c.Param("server_id")
+	if h.requireServerOwnership(c, serverID) == nil {
+		return
+	}
+	userID := h.currentUserID(c)
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
+		return
+	}
+	s, err := h.hostedMgr.SessionHealth(c.Request.Context(), userID, serverID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if s == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+	c.JSON(http.StatusOK, s)
+}
+
+func (h *Handler) RestartHostedSession(c *gin.Context) {
+	serverID := c.Param("server_id")
+	if h.requireServerOwnership(c, serverID) == nil {
+		return
+	}
+	userID := h.currentUserID(c)
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
+		return
+	}
+	s, err := h.hostedMgr.RestartSession(c.Request.Context(), userID, serverID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	if s == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+	c.JSON(http.StatusOK, s)
+}
+
+func (h *Handler) StopHostedSession(c *gin.Context) {
+	serverID := c.Param("server_id")
+	if h.requireServerOwnership(c, serverID) == nil {
+		return
+	}
+	userID := h.currentUserID(c)
+	if strings.TrimSpace(userID) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
+		return
+	}
+	s, err := h.hostedMgr.StopSession(c.Request.Context(), userID, serverID)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	if s == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+	c.JSON(http.StatusOK, s)
+}
+
+func loadHostedManifest(userID, serverID, version string) (json.RawMessage, error) {
+	if userID == "" || serverID == "" || version == "" {
+		return nil, fmt.Errorf("userID, serverID, and version are required")
+	}
+	path := filepath.Join("generated-servers", userID, serverID, version, "manifest.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, fmt.Errorf("manifest is not valid JSON")
+	}
+	return json.RawMessage(data), nil
 }
 
 type hostedResolvedTarget struct {
@@ -1437,6 +1581,139 @@ func (h *Handler) DownloadMarketplaceServer(c *gin.Context) {
 
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s-v%s-mcp-server.zip", generator.ServerSlug(snapshotServer.Name), server.LatestVersion))
 	c.Data(http.StatusOK, "application/zip", zipData)
+}
+
+func hostedVirtualServerID(kind, userID, sourceID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(kind+"-hosted:"+userID+":"+sourceID)).String()
+}
+
+// MarketplaceHostedDeploy deploys a published marketplace server into the caller's hosted runtime.
+func (h *Handler) MarketplaceHostedDeploy(c *gin.Context) {
+	id := c.Param("id")
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
+		return
+	}
+
+	source, err := h.db.GetServer(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if source == nil || source.Status != models.ServerStatusPublished || !source.IsPublic {
+		c.JSON(http.StatusNotFound, gin.H{"error": "marketplace server not found"})
+		return
+	}
+	if source.LatestVersion == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no published version available"})
+		return
+	}
+	srcVersion, err := h.db.GetServerVersion(c.Request.Context(), source.ID, source.LatestVersion)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if srcVersion == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "source version snapshot not found"})
+		return
+	}
+	var snapshot models.Server
+	if err := json.Unmarshal(srcVersion.Snapshot, &snapshot); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse source snapshot"})
+		return
+	}
+
+	virtualID := hostedVirtualServerID("marketplace", userID, source.ID)
+	virtualName := strings.TrimSpace(source.Name) + " (Marketplace)"
+	virtualServer, err := h.db.EnsureHostedVirtualServer(c.Request.Context(), virtualID, userID, virtualName, source.Description)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Align snapshot identity with virtual hosted server so endpoint + manifest details are user-local.
+	snapshot.ID = virtualServer.ID
+	snapshot.Name = virtualServer.Name
+	if strings.TrimSpace(snapshot.Description) == "" {
+		snapshot.Description = virtualServer.Description
+	}
+
+	snapshotBytes, err := json.Marshal(snapshot)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create hosted snapshot"})
+		return
+	}
+	sv, err := h.db.CreateHostedServerVersion(c.Request.Context(), virtualServer.ID, userID, snapshotBytes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	observabilityEnv := h.hostedObservabilityEnv(c, virtualServer)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, virtualServer.ID, sv.Version, &snapshot, observabilityEnv)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
+		return
+	}
+
+	resp, err := h.buildHostedStatusResponse(c, virtualServer, userID, cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// MarketplaceHostedStatus returns existing hosted runtime details for a marketplace deploy.
+func (h *Handler) MarketplaceHostedStatus(c *gin.Context) {
+	id := c.Param("id")
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	source, err := h.db.GetServer(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if source == nil || source.Status != models.ServerStatusPublished || !source.IsPublic {
+		c.JSON(http.StatusNotFound, gin.H{"error": "marketplace server not found"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	virtualID := hostedVirtualServerID("marketplace", userID, source.ID)
+	virtualServer, err := h.db.GetServer(c.Request.Context(), virtualID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if virtualServer == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	cfg, err := h.hostedMgr.GetContainerForServer(c.Request.Context(), userID, virtualServer.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if cfg == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	resp, err := h.buildHostedStatusResponse(c, virtualServer, userID, cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Tool handlers
@@ -2726,6 +3003,145 @@ func (h *Handler) ExportComposition(c *gin.Context) {
 	filename := fmt.Sprintf("%s-composition.zip", strings.ReplaceAll(strings.ToLower(composition.Name), " ", "-"))
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Data(http.StatusOK, "application/zip", zipData)
+}
+
+func (h *Handler) loadCompositionServers(ctx *gin.Context, composition *models.ServerComposition) ([]*models.Server, error) {
+	servers := make([]*models.Server, 0, len(composition.ServerIDs))
+	for _, serverID := range composition.ServerIDs {
+		server, err := h.db.GetServer(ctx.Request.Context(), serverID)
+		if err != nil || server == nil {
+			return nil, fmt.Errorf("server %s not found", serverID)
+		}
+		servers = append(servers, server)
+	}
+	return servers, nil
+}
+
+// HostedDeployComposition deploys a composition snapshot to hosted runtime.
+// Opinionated defaults are always enabled for hosted compose:
+// prefix_tool_names=true, merge_resources=true, merge_prompts=true.
+func (h *Handler) HostedDeployComposition(c *gin.Context) {
+	id := c.Param("id")
+	comp := h.requireCompositionOwnership(c, id)
+	if comp == nil {
+		return
+	}
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
+		return
+	}
+
+	servers, err := h.loadCompositionServers(c, comp)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	options := generator.CompositionOptions{
+		PrefixToolNames: true,
+		MergeResources:  true,
+		MergePrompts:    true,
+	}
+	combined, err := h.generator.BuildCompositionServer(comp, servers, options)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	virtualID := hostedVirtualServerID("composition", userID, comp.ID)
+	virtualName := strings.TrimSpace(comp.Name) + " (Composition)"
+	virtualServer, err := h.db.EnsureHostedVirtualServer(c.Request.Context(), virtualID, userID, virtualName, comp.Description)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	combined.ID = virtualServer.ID
+	combined.Name = virtualServer.Name
+	combined.Description = virtualServer.Description
+
+	snapshotBytes, err := json.Marshal(combined)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create hosted snapshot"})
+		return
+	}
+	sv, err := h.db.CreateHostedServerVersion(c.Request.Context(), virtualServer.ID, userID, snapshotBytes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	observabilityEnv := h.hostedObservabilityEnv(c, virtualServer)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, virtualServer.ID, sv.Version, combined, observabilityEnv)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
+		return
+	}
+
+	resp, err := h.buildHostedStatusResponse(c, virtualServer, userID, cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Echo hosted compose options so UI can show exact build opinionation.
+	manifest := map[string]interface{}{}
+	if len(resp.Manifest) > 0 {
+		_ = json.Unmarshal(resp.Manifest, &manifest)
+	}
+	manifest["composition_options"] = map[string]bool{
+		"prefix_tool_names": true,
+		"merge_resources":   true,
+		"merge_prompts":     true,
+	}
+	if b, err := json.Marshal(manifest); err == nil {
+		resp.Manifest = b
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// CompositionHostedStatus returns existing hosted runtime details for a composition deploy.
+func (h *Handler) CompositionHostedStatus(c *gin.Context) {
+	id := c.Param("id")
+	comp := h.requireCompositionOwnership(c, id)
+	if comp == nil {
+		return
+	}
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	virtualID := hostedVirtualServerID("composition", userID, comp.ID)
+	virtualServer, err := h.db.GetServer(c.Request.Context(), virtualID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if virtualServer == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	cfg, err := h.hostedMgr.GetContainerForServer(c.Request.Context(), userID, virtualServer.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if cfg == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	resp, err := h.buildHostedStatusResponse(c, virtualServer, userID, cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func replaceTemplate(s, key string, value string) string {

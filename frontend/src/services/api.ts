@@ -623,8 +623,28 @@ export interface HostedStatusResponse {
   last_ensured_at?: string;
   endpoint?: string;
   mcp_config?: string;
+  manifest?: Record<string, unknown>;
   container_id?: string;
   host_port?: string;
+}
+
+export interface HostedSession {
+  id: string;
+  user_id: string;
+  server_id: string;
+  server_name?: string;
+  snapshot_version?: string;
+  container_id?: string;
+  host_port?: string;
+  status: string;
+  health: string;
+  last_used_at?: string;
+  last_ensured_at?: string;
+  started_at?: string;
+  stopped_at?: string;
+  last_error?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export const hostedPublish = async (serverId: string, version?: string): Promise<HostedPublishResponse> => {
@@ -634,6 +654,46 @@ export const hostedPublish = async (serverId: string, version?: string): Promise
 
 export const hostedStatus = async (serverId: string): Promise<HostedStatusResponse> => {
   const { data } = await api.get<HostedStatusResponse>(`/servers/${serverId}/hosted-status`);
+  return data;
+};
+
+export const listHostedSessions = async (): Promise<HostedSession[]> => {
+  const { data } = await api.get<{ sessions: HostedSession[] }>('/hosted/sessions');
+  return data.sessions || [];
+};
+
+export const checkHostedSessionHealth = async (serverId: string): Promise<HostedSession> => {
+  const { data } = await api.get<HostedSession>(`/hosted/sessions/${serverId}/health`);
+  return data;
+};
+
+export const restartHostedSession = async (serverId: string): Promise<HostedSession> => {
+  const { data } = await api.post<HostedSession>(`/hosted/sessions/${serverId}/restart`);
+  return data;
+};
+
+export const stopHostedSession = async (serverId: string): Promise<HostedSession> => {
+  const { data } = await api.post<HostedSession>(`/hosted/sessions/${serverId}/stop`);
+  return data;
+};
+
+export const marketplaceHostedDeploy = async (serverId: string): Promise<HostedStatusResponse> => {
+  const { data } = await api.post<HostedStatusResponse>(`/marketplace/${serverId}/hosted-deploy`);
+  return data;
+};
+
+export const marketplaceHostedStatus = async (serverId: string): Promise<HostedStatusResponse> => {
+  const { data } = await api.get<HostedStatusResponse>(`/marketplace/${serverId}/hosted-status`);
+  return data;
+};
+
+export const compositionHostedDeploy = async (compositionId: string): Promise<HostedStatusResponse> => {
+  const { data } = await api.post<HostedStatusResponse>(`/compositions/${compositionId}/hosted-deploy`);
+  return data;
+};
+
+export const compositionHostedStatus = async (compositionId: string): Promise<HostedStatusResponse> => {
+  const { data } = await api.get<HostedStatusResponse>(`/compositions/${compositionId}/hosted-status`);
   return data;
 };
 

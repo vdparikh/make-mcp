@@ -166,8 +166,11 @@ type CompositionOptions struct {
 	MergePrompts    bool `json:"merge_prompts"`
 }
 
-// GenerateComposition generates a combined MCP server from multiple servers
-func (g *Generator) GenerateComposition(composition *models.ServerComposition, servers []*models.Server, options CompositionOptions) (*GeneratedServer, error) {
+// BuildCompositionServer builds a virtual combined server from multiple servers.
+func (g *Generator) BuildCompositionServer(composition *models.ServerComposition, servers []*models.Server, options CompositionOptions) (*models.Server, error) {
+	if composition == nil {
+		return nil, fmt.Errorf("composition is required")
+	}
 	// Create a virtual combined server
 	combined := &models.Server{
 		ID:          composition.ID,
@@ -230,6 +233,16 @@ func (g *Generator) GenerateComposition(composition *models.ServerComposition, s
 				combined.Prompts = append(combined.Prompts, prompt)
 			}
 		}
+	}
+
+	return combined, nil
+}
+
+// GenerateComposition generates a combined MCP server from multiple servers
+func (g *Generator) GenerateComposition(composition *models.ServerComposition, servers []*models.Server, options CompositionOptions) (*GeneratedServer, error) {
+	combined, err := g.BuildCompositionServer(composition, servers, options)
+	if err != nil {
+		return nil, err
 	}
 
 	// Generate the combined server
