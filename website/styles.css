@@ -206,6 +206,169 @@ body {
   color: #fff !important;
 }
 
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.hero-social-proof {
+  margin-top: 1.25rem;
+  margin-bottom: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.95rem;
+}
+
+.proof-strip {
+  background: var(--card-bg);
+  padding: 1.1rem 0;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.proof-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--dark-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: border-color var(--transition), transform var(--transition);
+}
+
+.proof-card:hover {
+  border-color: var(--secondary-color);
+  transform: translateY(-1px);
+  color: var(--text-primary);
+}
+
+.proof-card img {
+  max-width: 100%;
+  height: 28px;
+}
+
+.why-section {
+  padding: 3.5rem 0 4rem;
+  background: var(--dark-bg);
+}
+
+.why-card {
+  height: 100%;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1rem;
+  box-shadow: var(--shadow);
+}
+
+.why-card i {
+  font-size: 1.35rem;
+  color: var(--primary-dark);
+}
+
+.why-card h3 {
+  margin: 0.65rem 0 0.35rem;
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.why-card p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* ----- Screenshots gallery ----- */
+.screenshots-section {
+  padding: 3.5rem 0 4.5rem;
+  background: var(--card-bg);
+  border-top: 1px solid var(--card-border);
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.screenshot-card {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  background: var(--dark-bg);
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+.screenshot-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--secondary-color);
+}
+
+.screenshot-card img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  display: block;
+}
+
+.screenshot-card span {
+  display: block;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.screenshot-modal .modal-content {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+}
+
+.screenshot-modal .modal-header {
+  border-bottom: 1px solid var(--card-border);
+}
+
+.screenshot-modal .modal-body {
+  padding: 0.75rem;
+}
+
+.screenshot-modal .modal-body img {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+}
+
 /* ----- Section titles ----- */
 .section-title {
   font-family: var(--font-body);
@@ -342,6 +505,13 @@ body {
 }
 
 @media (max-width: 767.98px) {
+  .proof-grid {
+    grid-template-columns: 1fr;
+  }
+  .screenshot-grid {
+    grid-template-columns: 1fr;
+  }
+
   .features-tabs {
     grid-template-columns: 1fr;
   }
@@ -660,8 +830,20 @@ body {
   .hero-ctas .btn {
     width: 100%;
   }
+  .hero-badges {
+    justify-content: flex-start;
+  }
+  .hero-badge {
+    font-size: 0.78rem;
+  }
   .section-lead {
     margin-bottom: 1.75rem;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1199.98px) {
+  .screenshot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
