@@ -12,6 +12,8 @@ import Observability from './pages/Observability';
 import Docs from './pages/Docs';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import { TryChatProvider } from './contexts/TryChatContext';
+import TryChatModal from './components/TryChatModal';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -54,6 +56,7 @@ function AppLayout() {
           <Route path="/docs" element={<Docs />} />
         </Routes>
       </main>
+      <TryChatModal />
     </div>
   );
 }
@@ -61,30 +64,32 @@ function AppLayout() {
 function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route
-          path="/*"
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
+      <TryChatProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+        <ToastContainer
+          position="bottom-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="dark"
         />
-      </Routes>
-      <ToastContainer
-        position="bottom-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
+      </TryChatProvider>
     </AuthProvider>
   );
 }

@@ -31,6 +31,7 @@ import ContextConfigEditor from '../components/ContextConfigEditor';
 import PolicyEditor from '../components/PolicyEditor';
 import TestPlayground from '../components/TestPlayground';
 import HealingDashboard from '../components/HealingDashboard';
+import { useTryChat } from '../contexts/TryChatContext';
 
 type TabType = 'general' | 'environments' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'observability' | 'deploy' | 'versions';
 
@@ -301,6 +302,7 @@ export default function ServerEditor() {
   const [hostedResult, setHostedResult] = useState<HostedPublishResponse | null>(null);
   const [hostedRuntime, setHostedRuntime] = useState<HostedStatusResponse | null>(null);
   const [hostedStatusLoading, setHostedStatusLoading] = useState(false);
+  const { openTryChat } = useTryChat();
   const [showHostedManifest, setShowHostedManifest] = useState(false);
   
   // GitHub export state
@@ -685,6 +687,13 @@ export default function ServerEditor() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => openTryChat({ type: 'server', id: server.id, name: server.name })}
+          >
+            <i className="bi bi-stars"></i>
+            Try Chat
+          </button>
           <button 
             className="btn btn-primary" 
             onClick={openPublishModal}

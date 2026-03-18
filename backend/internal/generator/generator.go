@@ -525,7 +525,14 @@ func toCamelCase(s string) string {
 	for i := 1; i < len(words); i++ {
 		words[i] = strings.Title(words[i])
 	}
-	return strings.Join(words, "")
+	out := strings.Join(words, "")
+	if out == "" {
+		return "item"
+	}
+	if out[0] >= '0' && out[0] <= '9' {
+		return "n" + out
+	}
+	return out
 }
 
 func toPascalCase(s string) string {
@@ -533,12 +540,23 @@ func toPascalCase(s string) string {
 	for i := range words {
 		words[i] = strings.Title(words[i])
 	}
-	return strings.Join(words, "")
+	out := strings.Join(words, "")
+	if out == "" {
+		return "Item"
+	}
+	if out[0] >= '0' && out[0] <= '9' {
+		return "N" + out
+	}
+	return out
 }
 
 func toSnakeCase(s string) string {
 	words := splitWords(s)
-	return strings.Join(words, "_")
+	out := strings.Join(words, "_")
+	if out == "" {
+		return "item"
+	}
+	return out
 }
 
 // ServerSlug returns a filesystem-safe kebab-case slug from a server name (e.g. "Demo API Toolkit" -> "demo-api-toolkit").
@@ -556,32 +574,41 @@ func ServerSlug(name string) string {
 }
 
 func splitWords(s string) []string {
-	s = strings.ReplaceAll(s, "-", "_")
-	s = strings.ReplaceAll(s, " ", "_")
-	
 	var words []string
-	current := ""
-	
-	for i, r := range s {
-		if r == '_' {
-			if current != "" {
-				words = append(words, strings.ToLower(current))
-				current = ""
+	var current strings.Builder
+	prevLower := false
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		words = append(words, strings.ToLower(current.String()))
+		current.Reset()
+	}
+
+	for _, r := range s {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			if prevLower {
+				flush()
 			}
-		} else if i > 0 && r >= 'A' && r <= 'Z' && s[i-1] >= 'a' && s[i-1] <= 'z' {
-			if current != "" {
-				words = append(words, strings.ToLower(current))
-			}
-			current = string(r)
-		} else {
-			current += string(r)
+			current.WriteRune(r + ('a' - 'A'))
+			prevLower = false
+		case r >= 'a' && r <= 'z':
+			current.WriteRune(r)
+			prevLower = true
+		case r >= '0' && r <= '9':
+			current.WriteRune(r)
+			prevLower = false
+		default:
+			// Treat all non-ASCII-alnum runes as separators (including Unicode dashes).
+			flush()
+			prevLower = false
 		}
 	}
-	
-	if current != "" {
-		words = append(words, strings.ToLower(current))
+	flush()
+	if len(words) == 0 {
+		return []string{"item"}
 	}
-	
 	return words
 }
 

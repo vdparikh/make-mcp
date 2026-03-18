@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import type { Server, ServerComposition } from '../types';
 import DeployOptionsModal from './DeployOptionsModal';
+import { useTryChat } from '../contexts/TryChatContext';
 import {
   createComposition,
   updateComposition,
@@ -29,6 +30,7 @@ export default function CompositionsTab({
   openFormRequested,
   onFormOpened,
 }: CompositionsTabProps) {
+  const { openTryChat } = useTryChat();
   const [showFormModal, setShowFormModal] = useState(false);
   useEffect(() => {
     if (openFormRequested) {
@@ -233,6 +235,15 @@ export default function CompositionsTab({
                 <button type="button" className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => openDeployModal(composition)}>
                   <i className="bi bi-cloud-arrow-up"></i>
                   Deploy
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ flex: 1 }}
+                  onClick={() => openTryChat({ type: 'composition', id: composition.id, name: composition.name })}
+                >
+                  <i className="bi bi-stars"></i>
+                  Try
                 </button>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleEdit(composition)}>
                   <i className="bi bi-pencil"></i>
