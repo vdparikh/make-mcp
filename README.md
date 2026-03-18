@@ -164,6 +164,25 @@ Add to your MCP client config:
 }
 ```
 
+## Hosted Deploy Architecture
+
+Make MCP supports hosted MCP deployment from the Deploy modal via **Publish MCP**.
+
+- **Hosted endpoint**: `http(s)://<host>/api/users/<user_id>/<server_slug>` (versionless URL)
+- **Request path**: client `GET/POST` -> backend hosted route -> reverse proxy -> managed container
+- **Transport**: hosted runtime uses MCP over HTTP + SSE; backend streams SSE without buffering
+- **Container model**: one active container per `user + server` (older/stale hosted containers are reconciled/cleaned)
+- **Snapshot model**: each hosted publish creates a hosted-only snapshot record (separate from normal semantic release versions)
+- **Runtime source**: generated server files are written under `backend/generated-servers/<user>/<server>/<hosted-snapshot>/` and mounted into the container
+- **Observability**: backend injects runtime env (`MCP_OBSERVABILITY_*`) into hosted containers; for URL-based hosted servers, container env is the source of truth
+
+In the Deploy UI, Hosted status shows explicit runtime metadata:
+
+- deployed snapshot id/version
+- container started-at time
+- last ensured time
+- hosted URL and MCP config
+
 ## Documentation
 
 - [Getting Started Guide](./docs/getting-started.md) — Full setup and usage guide
