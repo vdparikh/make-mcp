@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -1477,6 +1478,40 @@ func (db *DB) GetServerVersion(ctx context.Context, serverID, version string) (*
 	}
 
 	return &v, nil
+}
+
+// ServerSlug returns a URL-safe slug from a server name (lowercase, spaces to hyphens, non-alphanumeric removed).
+// Matches frontend serverSlug: replace spaces with '-', lowercase, remove non [a-z0-9-].
+func ServerSlug(name string) string {
+	s := strings.TrimSpace(name)
+	s = strings.ToLower(s)
+	var b strings.Builder
+	lastHyphen := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastHyphen = false
+		} else if (r == ' ' || r == '_' || r == '-') && !lastHyphen {
+			b.WriteRune('-')
+			lastHyphen = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// GetServerByOwnerAndSlug returns the server owned by ownerID whose name slug matches serverSlug.
+func (db *DB) GetServerByOwnerAndSlug(ctx context.Context, ownerID, serverSlug string) (*models.Server, error) {
+	servers, err := db.ListServers(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	slugLower := strings.ToLower(strings.TrimSpace(serverSlug))
+	for i := range servers {
+		if ServerSlug(servers[i].Name) == slugLower {
+			return db.GetServer(ctx, servers[i].ID)
+		}
+	}
+	return nil, nil
 }
 
 func (db *DB) ListPublishedServers(ctx context.Context) ([]models.Server, error) {

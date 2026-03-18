@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -22,6 +24,7 @@ import (
 	"github.com/vdparikh/make-mcp/backend/internal/generator"
 	"github.com/vdparikh/make-mcp/backend/internal/governance"
 	"github.com/vdparikh/make-mcp/backend/internal/healing"
+	"github.com/vdparikh/make-mcp/backend/internal/hosted"
 	"github.com/vdparikh/make-mcp/backend/internal/models"
 	"github.com/vdparikh/make-mcp/backend/internal/openapi"
 	"github.com/vdparikh/make-mcp/backend/internal/security"
@@ -39,10 +42,12 @@ type Handler struct {
 	openapiParser *openapi.Parser
 	webauthn      *webauthnlib.WebAuthn
 	sessionStore  *webauthnpkg.SessionStore
+	hostedMgr     *hosted.Manager
 }
 
 // NewHandler creates a new API handler
 func NewHandler(db *database.DB, wa *webauthnlib.WebAuthn, sessionStore *webauthnpkg.SessionStore) *Handler {
+	hm, _ := hosted.NewManager()
 	return &Handler{
 		db:            db,
 		generator:     generator.NewGenerator(),
@@ -52,6 +57,7 @@ func NewHandler(db *database.DB, wa *webauthnlib.WebAuthn, sessionStore *webauth
 		openapiParser: openapi.NewParser(),
 		webauthn:      wa,
 		sessionStore:  sessionStore,
+		hostedMgr:     hm,
 	}
 }
 
@@ -86,6 +92,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 			servers.GET("/:id/context-configs", h.GetContextConfigs)
 			servers.POST("/:id/context-configs", h.CreateContextConfig)
 			servers.POST("/:id/publish", h.PublishServer)
+			servers.POST("/:id/hosted-publish", h.HostedPublish)
+			servers.GET("/:id/hosted-status", h.HostedStatus)
 			servers.GET("/:id/versions", h.GetServerVersions)
 			servers.GET("/:id/versions/:version", h.GetServerVersionSnapshot)
 			servers.GET("/:id/versions/:version/download", h.DownloadServerVersion)
@@ -173,6 +181,13 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		api.POST("/import/openapi", h.AuthMiddleware(), h.ImportOpenAPI)
 		api.POST("/import/openapi/preview", h.PreviewOpenAPIImport)
 		api.POST("/import/openapi/fetch-url", h.FetchOpenAPIFromURL)
+
+		// Hosted MCP: no auth.
+		// Canonical URL has no version; /:version remains for backward compatibility.
+		api.GET("/users/:user_id/:server_slug", h.HostedMCPGet)
+		api.POST("/users/:user_id/:server_slug", h.HostedMCPPost)
+		api.GET("/users/:user_id/:server_slug/:version", h.HostedMCPGet)
+		api.POST("/users/:user_id/:server_slug/:version", h.HostedMCPPost)
 
 		api.GET("/docs/:doc", h.GetDoc)
 		api.GET("/health", h.HealthCheck)
@@ -846,6 +861,376 @@ func (h *Handler) PublishServer(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, version)
+}
+
+// HostedPublishRequest is the body for hosted-publish.
+type HostedPublishRequest struct {
+	Version string `json:"version"` // optional; if empty use server's latest or current version
+}
+
+// HostedPublishResponse is returned after publishing to hosted.
+type HostedPublishResponse struct {
+	BaseURL    string `json:"base_url"`
+	UserID     string `json:"user_id"`
+	ServerSlug string `json:"server_slug"`
+	Version    string `json:"version"`
+	Endpoint   string `json:"endpoint"`
+	MCPConfig  string `json:"mcp_config"`
+}
+
+type HostedStatusResponse struct {
+	Running    bool   `json:"running"`
+	UserID     string `json:"user_id,omitempty"`
+	ServerID   string `json:"server_id,omitempty"`
+	ServerSlug string `json:"server_slug,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Endpoint   string `json:"endpoint,omitempty"`
+	ContainerID string `json:"container_id,omitempty"`
+	HostPort   string `json:"host_port,omitempty"`
+}
+
+// HostedPublish publishes a version and makes it available at /api/users/:user_id/:server_slug/:version.
+func (h *Handler) HostedPublish(c *gin.Context) {
+	id := c.Param("id")
+	server := h.requireServerOwnership(c, id)
+	if server == nil {
+		return
+	}
+
+	userID := ""
+	if uid, exists := c.Get("userID"); exists {
+		userID = uid.(string)
+	}
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	var req HostedPublishRequest
+	_ = c.ShouldBindJSON(&req)
+
+	version := strings.TrimSpace(req.Version)
+	if version == "" {
+		version = server.LatestVersion
+	}
+	if version == "" {
+		version = server.Version
+	}
+	if version == "" {
+		version = "1.0.0"
+	}
+
+	// Ensure this version exists (publish if not)
+	sv, err := h.db.GetServerVersion(c.Request.Context(), id, version)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if sv == nil {
+		// Publish current server state as this version
+		snapshot, err := json.Marshal(server)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create snapshot"})
+			return
+		}
+		sv, err = h.db.PublishServerVersion(c.Request.Context(), id, version, "Hosted deployment", userID, snapshot)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	// Ensure one running container for this (user, server), using the selected published version snapshot.
+	snapshotServer := *server
+	if sv != nil && len(sv.Snapshot) > 0 {
+		var snap models.Server
+		if err := json.Unmarshal(sv.Snapshot, &snap); err == nil {
+			snapshotServer = snap
+		}
+	}
+	observabilityEnv := h.hostedObservabilityEnv(c, server)
+	if h.hostedMgr != nil {
+		if cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, server.ID, version, &snapshotServer, observabilityEnv); err != nil {
+			// Log but do not fail the publish.
+			fmt.Printf("HostedPublish: failed to ensure container for user=%s server=%s: %v\n", userID, server.ID, err)
+		} else {
+			fmt.Printf("HostedPublish: ensured container for user=%s server=%s version=%s container=%s host_port=%s\n", userID, server.ID, version, cfg.ContainerID, cfg.HostPort)
+		}
+	}
+
+	slug := database.ServerSlug(server.Name)
+	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
+	endpoint := baseURL + "/users/" + userID + "/" + slug
+
+	// MCP config for IDE (Cursor, Claude Desktop, etc.): URL transport + observability env.
+	serverConfig := map[string]interface{}{
+		"url": endpoint,
+	}
+	if obsKey := strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_KEY"]); obsKey != "" {
+		serverConfig["env"] = map[string]string{
+			"MCP_OBSERVABILITY_ENDPOINT":   h.hostedObservabilityEndpoint(c),
+			"MCP_OBSERVABILITY_KEY":        obsKey,
+			"MCP_OBSERVABILITY_USER_ID":    strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_USER_ID"]),
+			"MCP_OBSERVABILITY_CLIENT_AGENT": "Cursor",
+			"MCP_OBSERVABILITY_USER_TOKEN": "",
+		}
+	}
+	mcpConfigBytes, err := json.MarshalIndent(map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			slug: serverConfig,
+		},
+	}, "", "  ")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build mcp config"})
+		return
+	}
+	mcpConfig := string(mcpConfigBytes)
+
+	c.JSON(http.StatusOK, HostedPublishResponse{
+		BaseURL:    baseURL,
+		UserID:     userID,
+		ServerSlug: slug,
+		Version:    version,
+		Endpoint:   endpoint,
+		MCPConfig:  mcpConfig,
+	})
+}
+
+func (h *Handler) hostedBaseURL(c *gin.Context) string {
+	baseURL := os.Getenv("MCP_HOSTED_BASE_URL")
+	if baseURL != "" {
+		return strings.TrimSuffix(baseURL, "/")
+	}
+	scheme := "https"
+	if c.Request.TLS == nil && (c.Request.Header.Get("X-Forwarded-Proto") == "" || c.Request.Header.Get("X-Forwarded-Proto") == "http") {
+		scheme = "http"
+	}
+	if proto := c.Request.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	host := c.Request.Host
+	if h := c.Request.Header.Get("X-Forwarded-Host"); h != "" {
+		host = h
+	}
+	return scheme + "://" + host + "/api"
+}
+
+func (h *Handler) hostedObservabilityEndpoint(c *gin.Context) string {
+	if base := strings.TrimSpace(os.Getenv("MCP_OBSERVABILITY_INGEST_BASE_URL")); base != "" {
+		base = strings.TrimSuffix(base, "/")
+		if strings.HasSuffix(base, "/api") {
+			return base + "/observability/events"
+		}
+		return base + "/api/observability/events"
+	}
+	base := h.hostedBaseURL(c)
+	// Hosted containers cannot reach host services via localhost/127.0.0.1.
+	// Rewrite to host.docker.internal so runtime event ingestion works.
+	if u, err := url.Parse(base); err == nil {
+		host := strings.ToLower(u.Hostname())
+		if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+			port := u.Port()
+			if port != "" {
+				u.Host = net.JoinHostPort("host.docker.internal", port)
+			} else {
+				u.Host = "host.docker.internal"
+			}
+			base = u.String()
+		}
+	}
+	if strings.HasSuffix(base, "/api") {
+		return base + "/observability/events"
+	}
+	return base + "/api/observability/events"
+}
+
+func (h *Handler) hostedObservabilityEnv(c *gin.Context, server *models.Server) map[string]string {
+	env := map[string]string{}
+	if server == nil {
+		return env
+	}
+	key := strings.TrimSpace(server.ObservabilityReportingKey)
+	if key == "" {
+		if ensuredKey, err := h.db.EnsureServerObservabilityKey(c.Request.Context(), server.ID); err == nil {
+			key = ensuredKey
+		}
+	}
+	if key == "" {
+		return env
+	}
+	env["MCP_OBSERVABILITY_ENDPOINT"] = h.hostedObservabilityEndpoint(c)
+	env["MCP_OBSERVABILITY_KEY"] = key
+	env["MCP_OBSERVABILITY_USER_ID"] = h.currentUserID(c)
+	return env
+}
+
+func (h *Handler) HostedStatus(c *gin.Context) {
+	id := c.Param("id")
+	server := h.requireServerOwnership(c, id)
+	if server == nil {
+		return
+	}
+	userID := h.currentUserID(c)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	if h.hostedMgr == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+
+	cfg, err := h.hostedMgr.GetContainerForServer(c.Request.Context(), userID, server.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if cfg == nil {
+		c.JSON(http.StatusOK, HostedStatusResponse{Running: false})
+		return
+	}
+	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
+	slug := database.ServerSlug(server.Name)
+	c.JSON(http.StatusOK, HostedStatusResponse{
+		Running:     true,
+		UserID:      userID,
+		ServerID:    server.ID,
+		ServerSlug:  slug,
+		Version:     cfg.Version,
+		Endpoint:    baseURL + "/users/" + userID + "/" + slug,
+		ContainerID: cfg.ContainerID,
+		HostPort:    cfg.HostPort,
+	})
+}
+
+type hostedResolvedTarget struct {
+	UserID     string
+	ServerID   string
+	ServerSlug string
+	Version    string
+	Snapshot   *models.Server
+}
+
+// resolveHostedTarget resolves user/slug/(optional version) to a published snapshot.
+func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, error) {
+	userID := c.Param("user_id")
+	serverSlug := c.Param("server_slug")
+	if userID == "" || serverSlug == "" {
+		return nil, fmt.Errorf("missing hosted route params")
+	}
+
+	server, err := h.db.GetServerByOwnerAndSlug(c.Request.Context(), userID, serverSlug)
+	if err != nil {
+		return nil, err
+	}
+	if server == nil {
+		return nil, nil
+	}
+
+	version := strings.TrimSpace(c.Param("version"))
+	if version == "" {
+		version = strings.TrimSpace(server.LatestVersion)
+	}
+	if version == "" {
+		version = strings.TrimSpace(server.Version)
+	}
+	if version == "" {
+		return nil, nil
+	}
+
+	sv, err := h.db.GetServerVersion(c.Request.Context(), server.ID, version)
+	if err != nil {
+		return nil, err
+	}
+	if sv == nil {
+		return nil, nil
+	}
+	var snap models.Server
+	if err := json.Unmarshal(sv.Snapshot, &snap); err != nil {
+		return nil, fmt.Errorf("unmarshal server snapshot: %w", err)
+	}
+	return &hostedResolvedTarget{
+		UserID:     userID,
+		ServerID:   server.ID,
+		ServerSlug: serverSlug,
+		Version:    version,
+		Snapshot:   &snap,
+	}, nil
+}
+
+func (h *Handler) proxyToHostedContainer(c *gin.Context, cfg *hosted.ContainerConfig) {
+	target, err := url.Parse("http://127.0.0.1:" + cfg.HostPort)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid container target"})
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.FlushInterval = -1 // immediate flush for SSE / streaming
+	origDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDirector(req)
+		req.URL.Path = "/"
+		req.URL.RawPath = ""
+		req.Host = target.Host
+		req.Header.Set("X-Forwarded-Host", c.Request.Host)
+		req.Header.Set("X-Forwarded-Uri", c.Request.URL.Path)
+		if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+			req.Header.Set("X-Forwarded-Proto", proto)
+		} else if c.Request.TLS != nil {
+			req.Header.Set("X-Forwarded-Proto", "https")
+		} else {
+			req.Header.Set("X-Forwarded-Proto", "http")
+		}
+	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, proxyErr error) {
+		http.Error(w, "hosted proxy error: "+proxyErr.Error(), http.StatusBadGateway)
+	}
+
+	// Hint upstream proxies not to buffer SSE stream.
+	c.Header("X-Accel-Buffering", "no")
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+// HostedMCPGet proxies hosted MCP GET (JSON info or SSE stream) to the running container.
+func (h *Handler) HostedMCPGet(c *gin.Context) {
+	target, err := h.resolveHostedTarget(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if target == nil || h.hostedMgr == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
+		return
+	}
+	serverDB, _ := h.db.GetServer(c.Request.Context(), target.ServerID)
+	observabilityEnv := h.hostedObservabilityEnv(c, serverDB)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
+		return
+	}
+	h.proxyToHostedContainer(c, cfg)
+}
+
+// HostedMCPPost proxies hosted MCP JSON-RPC POST to the running container.
+func (h *Handler) HostedMCPPost(c *gin.Context) {
+	target, err := h.resolveHostedTarget(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if target == nil || h.hostedMgr == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
+		return
+	}
+	serverDB, _ := h.db.GetServer(c.Request.Context(), target.ServerID)
+	observabilityEnv := h.hostedObservabilityEnv(c, serverDB)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
+		return
+	}
+	h.proxyToHostedContainer(c, cfg)
 }
 
 // GetServerVersions returns all published versions for a server
@@ -1706,6 +2091,7 @@ func (h *Handler) IngestObservabilityEvents(c *gin.Context) {
 	}
 	server, err := h.db.GetServerByObservabilityKey(c.Request.Context(), req.Key)
 	if err != nil || server == nil {
+		fmt.Printf("IngestObservabilityEvents: rejected request (unknown key), events=%d\n", len(req.Events))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or unknown observability key"})
 		return
 	}
@@ -1740,6 +2126,7 @@ func (h *Handler) IngestObservabilityEvents(c *gin.Context) {
 		}
 		accepted++
 	}
+	fmt.Printf("IngestObservabilityEvents: server=%s accepted=%d total=%d\n", server.ID, accepted, len(req.Events))
 	c.JSON(http.StatusOK, gin.H{"accepted": accepted})
 }
 
