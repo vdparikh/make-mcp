@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { ObservabilityDashboardResponse, ToolExecution } from '../types';
-import { getObservabilityDashboard } from '../services/api';
+import {
+  checkHostedSessionHealth,
+  getObservabilityDashboard,
+  listHostedSessions,
+  restartHostedSession,
+  stopHostedSession,
+  type HostedSession,
+} from '../services/api';
 
 export default function Observability() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -17,6 +24,11 @@ export default function Observability() {
   const [toolFilter, setToolFilter] = useState(toolNameFromUrl);
   const [clientUserFilter, setClientUserFilter] = useState(clientUserIdFromUrl);
   const [clientAgentFilter, setClientAgentFilter] = useState(clientAgentFromUrl);
+  const [showSessionsModal, setShowSessionsModal] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<HostedSession[]>([]);
+  const [sessionActionBusy, setSessionActionBusy] = useState<Record<string, string>>({});
 
   const fetchData = () => {
     setLoading(true);
@@ -32,6 +44,15 @@ export default function Observability() {
       .finally(() => setLoading(false));
   };
 
+  const fetchSessions = () => {
+    setSessionsLoading(true);
+    setSessionsError(null);
+    listHostedSessions()
+      .then((items) => setSessions(items))
+      .catch((err) => setSessionsError(err.response?.data?.error || err.message || 'Failed to load hosted sessions'))
+      .finally(() => setSessionsLoading(false));
+  };
+
   useEffect(() => {
     fetchData();
   }, [serverFilter, toolFilter, clientUserFilter, clientAgentFilter]);
@@ -42,6 +63,11 @@ export default function Observability() {
     setClientUserFilter(clientUserIdFromUrl);
     setClientAgentFilter(clientAgentFromUrl);
   }, [serverIdFromUrl, toolNameFromUrl, clientUserIdFromUrl, clientAgentFromUrl]);
+
+  useEffect(() => {
+    if (!showSessionsModal) return;
+    fetchSessions();
+  }, [showSessionsModal]);
 
   const applyFilters = () => {
     const next = new URLSearchParams(searchParams);
@@ -59,6 +85,37 @@ export default function Observability() {
   const uniqueClientAgents = Array.from(new Set(events.map((e) => e.client_agent).filter(Boolean))).sort();
 
   const serverName = (id: string) => servers.find((s) => s.id === id)?.name ?? id;
+  const formatTime = (value?: string) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString();
+  };
+  const withSessionAction = async (session: HostedSession, action: 'health' | 'restart' | 'stop') => {
+    const key = session.server_id;
+    setSessionActionBusy((prev) => ({ ...prev, [key]: action }));
+    try {
+      const updated =
+        action === 'health'
+          ? await checkHostedSessionHealth(key)
+          : action === 'restart'
+            ? await restartHostedSession(key)
+            : await stopHostedSession(key);
+      setSessions((prev) => prev.map((item) => (item.server_id === key ? { ...item, ...updated } : item)));
+    } catch (err: unknown) {
+      const message =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setSessionsError(message || 'Session action failed');
+    } finally {
+      setSessionActionBusy((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
 
   return (
     <div>
@@ -79,6 +136,10 @@ export default function Observability() {
             Tool calls, latency, failures, and repair suggestions from your MCP servers across all clients.
           </p>
         </div>
+        <button className="btn btn-secondary" onClick={() => setShowSessionsModal(true)}>
+          <i className="bi bi-hdd-rack" style={{ marginRight: '0.4rem' }} />
+          Hosted Runtime Sessions
+        </button>
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
@@ -299,6 +360,106 @@ export default function Observability() {
             </div>
           )}
         </>
+      )}
+
+      {showSessionsModal && (
+        <div className="modal-overlay" onClick={() => setShowSessionsModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '1000px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Hosted Runtime Sessions</h3>
+              <button className="btn btn-secondary" onClick={() => setShowSessionsModal(false)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                  Durable runtime sessions tracked in DB. Use actions to check health, restart, or stop.
+                </p>
+                <button className="btn btn-secondary" onClick={fetchSessions} disabled={sessionsLoading}>
+                  <i className="bi bi-arrow-clockwise" />
+                </button>
+              </div>
+              {sessionsError && (
+                <div style={{ marginBottom: '0.75rem', color: 'var(--danger)' }}>{sessionsError}</div>
+              )}
+              {sessionsLoading && (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1rem 0' }}>
+                  <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                </div>
+              )}
+              {!sessionsLoading && sessions.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', padding: '1rem 0' }}>No hosted sessions found.</div>
+              )}
+              {sessions.length > 0 && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Server</th>
+                        <th>Snapshot</th>
+                        <th>Status</th>
+                        <th>Health</th>
+                        <th>Container</th>
+                        <th>Started</th>
+                        <th>Last Used</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessions.map((s) => {
+                        const busy = sessionActionBusy[s.server_id];
+                        return (
+                          <tr key={s.server_id}>
+                            <td>
+                              <Link to={`/servers/${s.server_id}`} style={{ color: 'var(--primary-color)' }}>
+                                {s.server_name || s.server_id}
+                              </Link>
+                            </td>
+                            <td>{s.snapshot_version || '—'}</td>
+                            <td>{s.status || 'unknown'}</td>
+                            <td>{s.health || 'unknown'}</td>
+                            <td style={{ fontSize: '0.8rem' }}>{s.container_id ? s.container_id.slice(0, 12) : '—'}</td>
+                            <td>{formatTime(s.started_at)}</td>
+                            <td>{formatTime(s.last_used_at)}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  disabled={!!busy}
+                                  onClick={() => withSessionAction(s, 'health')}
+                                  title="Check health"
+                                >
+                                  {busy === 'health' ? '...' : 'Health'}
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  disabled={!!busy}
+                                  onClick={() => withSessionAction(s, 'restart')}
+                                  title="Restart runtime"
+                                >
+                                  {busy === 'restart' ? '...' : 'Restart'}
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  disabled={!!busy || s.status === 'stopped'}
+                                  onClick={() => withSessionAction(s, 'stop')}
+                                  title="Stop runtime"
+                                >
+                                  {busy === 'stop' ? '...' : 'Stop'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -301,6 +301,7 @@ export default function ServerEditor() {
   const [hostedResult, setHostedResult] = useState<HostedPublishResponse | null>(null);
   const [hostedRuntime, setHostedRuntime] = useState<HostedStatusResponse | null>(null);
   const [hostedStatusLoading, setHostedStatusLoading] = useState(false);
+  const [showHostedManifest, setShowHostedManifest] = useState(false);
   
   // GitHub export state
   const [showGitHubModal, setShowGitHubModal] = useState(false);
@@ -395,6 +396,13 @@ export default function ServerEditor() {
         }
       : null
   );
+  const hostedManifest = (hostedRuntime?.manifest ?? null) as Record<string, unknown> | null;
+  const hostedManifestText = hostedManifest ? JSON.stringify(hostedManifest, null, 2) : '';
+  const hostedManifestRuntime = typeof hostedManifest?.runtime === 'string' ? hostedManifest.runtime : '—';
+  const hostedManifestImage = typeof hostedManifest?.image === 'string' ? hostedManifest.image : '—';
+  const hostedManifestSnapshot = typeof hostedManifest?.snapshot_version === 'string' ? hostedManifest.snapshot_version : '—';
+  const hostedManifestTools = Array.isArray(hostedManifest?.tools) ? hostedManifest.tools.length : 0;
+  const hostedManifestObservability = typeof hostedManifest?.observability === 'boolean' ? hostedManifest.observability : false;
 
   const loadServer = async () => {
     try {
@@ -1794,7 +1802,7 @@ docker run -it --rm \\
                     </div>
                   </div>
                   {hostedDisplay.mcp_config && (
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
                       <label className="form-label" style={{ fontWeight: 600 }}>MCP config (for your IDE)</label>
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
                         Add this to your MCP client config (e.g. Cursor <code>mcp.json</code>, Claude Desktop settings). You can edit the server name key if you like.
@@ -1812,6 +1820,43 @@ docker run -it --rm \\
                           <i className="bi bi-clipboard"></i> Copy config
                         </button>
                       </div>
+                    </div>
+                  )}
+                  {hostedManifest && (
+                    <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'var(--hover-bg)' }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        style={{ marginBottom: showHostedManifest ? '0.75rem' : 0 }}
+                        onClick={() => setShowHostedManifest((prev) => !prev)}
+                      >
+                        <i className={`bi ${showHostedManifest ? 'bi-chevron-up' : 'bi-chevron-down'}`} style={{ marginRight: '0.375rem' }}></i>
+                        Hosted Manifest
+                      </button>
+                      {showHostedManifest && (
+                        <>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>manifest.json</span>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => { navigator.clipboard.writeText(hostedManifestText); toast.success('Manifest copied'); }}
+                            >
+                              <i className="bi bi-clipboard"></i> Copy manifest
+                            </button>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 1rem', fontSize: '0.8125rem', marginBottom: '0.75rem' }}>
+                            <span><strong>Runtime:</strong> {hostedManifestRuntime}</span>
+                            <span><strong>Image:</strong> {hostedManifestImage}</span>
+                            <span><strong>Manifest snapshot:</strong> {hostedManifestSnapshot}</span>
+                            <span><strong>Tools:</strong> {hostedManifestTools}</span>
+                            <span><strong>Observability:</strong> {hostedManifestObservability ? 'enabled' : 'disabled'}</span>
+                          </div>
+                          <pre style={{ padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                            {hostedManifestText}
+                          </pre>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

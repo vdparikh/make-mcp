@@ -237,6 +237,26 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_test_presets_tool_user ON tool_test_presets(tool_id, user_id)`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS env_profiles JSONB`,
+		`CREATE TABLE IF NOT EXISTS hosted_sessions (
+			id UUID PRIMARY KEY,
+			user_id UUID NOT NULL,
+			server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+			snapshot_version VARCHAR(128),
+			container_id VARCHAR(128),
+			host_port VARCHAR(20),
+			status VARCHAR(32) NOT NULL DEFAULT 'starting',
+			health VARCHAR(32) NOT NULL DEFAULT 'unknown',
+			last_used_at TIMESTAMPTZ,
+			last_ensured_at TIMESTAMPTZ,
+			started_at TIMESTAMPTZ,
+			stopped_at TIMESTAMPTZ,
+			last_error TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE(user_id, server_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_hosted_sessions_user_id ON hosted_sessions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_hosted_sessions_status ON hosted_sessions(status)`,
 	}
 
 	for _, m := range migrations {
@@ -281,6 +301,44 @@ func (db *DB) CreateServer(ctx context.Context, req models.CreateServerRequest) 
 		return nil, fmt.Errorf("inserting server: %w", err)
 	}
 
+	return server, nil
+}
+
+// EnsureHostedVirtualServer creates a minimal server row with a fixed ID when missing.
+// Used for hosted deployments of assets like marketplace items/compositions.
+func (db *DB) EnsureHostedVirtualServer(ctx context.Context, id, ownerID, name, description string) (*models.Server, error) {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(ownerID) == "" || strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("id, ownerID, and name are required")
+	}
+	existing, err := db.GetServer(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	server := &models.Server{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Version:     "1.0.0",
+		Icon:        "bi-server",
+		Status:      models.ServerStatusDraft,
+		OwnerID:     ownerID,
+		IsPublic:    false,
+		Downloads:   0,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	_, err = db.pool.Exec(ctx,
+		`INSERT INTO servers (id, name, description, version, icon, status, owner_id, is_public, downloads, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		server.ID, server.Name, server.Description, server.Version, server.Icon, server.Status, nullIfEmpty(server.OwnerID), server.IsPublic, server.Downloads, server.CreatedAt, server.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("inserting hosted virtual server: %w", err)
+	}
 	return server, nil
 }
 
@@ -1516,6 +1574,134 @@ func (db *DB) UpdateServerLatestVersion(ctx context.Context, serverID, latestVer
 		return fmt.Errorf("updating server latest_version: %w", err)
 	}
 	return nil
+}
+
+func timePtrOrNil(t *time.Time) interface{} {
+	if t == nil {
+		return nil
+	}
+	return *t
+}
+
+func stringPtrOrNil(s string) interface{} {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
+}
+
+// UpsertHostedSession creates or updates durable hosted runtime session state.
+func (db *DB) UpsertHostedSession(ctx context.Context, s models.HostedSession) (*models.HostedSession, error) {
+	now := time.Now().UTC()
+	if s.ID == "" {
+		s.ID = uuid.New().String()
+	}
+	if strings.TrimSpace(s.Status) == "" {
+		s.Status = "starting"
+	}
+	if strings.TrimSpace(s.Health) == "" {
+		s.Health = "unknown"
+	}
+
+	var out models.HostedSession
+	err := db.pool.QueryRow(ctx, `
+		INSERT INTO hosted_sessions (
+			id, user_id, server_id, snapshot_version, container_id, host_port, status, health,
+			last_used_at, last_ensured_at, started_at, stopped_at, last_error, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14, $14
+		)
+		ON CONFLICT (user_id, server_id) DO UPDATE SET
+			snapshot_version = EXCLUDED.snapshot_version,
+			container_id = EXCLUDED.container_id,
+			host_port = EXCLUDED.host_port,
+			status = EXCLUDED.status,
+			health = EXCLUDED.health,
+			last_used_at = EXCLUDED.last_used_at,
+			last_ensured_at = EXCLUDED.last_ensured_at,
+			started_at = EXCLUDED.started_at,
+			stopped_at = EXCLUDED.stopped_at,
+			last_error = EXCLUDED.last_error,
+			updated_at = EXCLUDED.updated_at
+		RETURNING id, user_id, server_id, COALESCE(snapshot_version, ''), COALESCE(container_id, ''),
+			COALESCE(host_port, ''), status, health, last_used_at, last_ensured_at, started_at, stopped_at,
+			COALESCE(last_error, ''), created_at, updated_at
+	`,
+		s.ID, s.UserID, s.ServerID,
+		stringPtrOrNil(s.SnapshotVersion),
+		stringPtrOrNil(s.ContainerID),
+		stringPtrOrNil(s.HostPort),
+		s.Status, s.Health,
+		timePtrOrNil(s.LastUsedAt),
+		timePtrOrNil(s.LastEnsuredAt),
+		timePtrOrNil(s.StartedAt),
+		timePtrOrNil(s.StoppedAt),
+		stringPtrOrNil(s.LastError),
+		now,
+	).Scan(
+		&out.ID, &out.UserID, &out.ServerID, &out.SnapshotVersion, &out.ContainerID,
+		&out.HostPort, &out.Status, &out.Health, &out.LastUsedAt, &out.LastEnsuredAt, &out.StartedAt,
+		&out.StoppedAt, &out.LastError, &out.CreatedAt, &out.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("upserting hosted session: %w", err)
+	}
+	return &out, nil
+}
+
+func (db *DB) GetHostedSession(ctx context.Context, userID, serverID string) (*models.HostedSession, error) {
+	var out models.HostedSession
+	err := db.pool.QueryRow(ctx, `
+		SELECT id, user_id, server_id, COALESCE(snapshot_version, ''), COALESCE(container_id, ''),
+			COALESCE(host_port, ''), status, health, last_used_at, last_ensured_at, started_at, stopped_at,
+			COALESCE(last_error, ''), created_at, updated_at
+		FROM hosted_sessions
+		WHERE user_id = $1 AND server_id = $2
+	`, userID, serverID).Scan(
+		&out.ID, &out.UserID, &out.ServerID, &out.SnapshotVersion, &out.ContainerID,
+		&out.HostPort, &out.Status, &out.Health, &out.LastUsedAt, &out.LastEnsuredAt, &out.StartedAt,
+		&out.StoppedAt, &out.LastError, &out.CreatedAt, &out.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying hosted session: %w", err)
+	}
+	return &out, nil
+}
+
+func (db *DB) ListHostedSessions(ctx context.Context, userID string) ([]models.HostedSession, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, user_id, server_id, COALESCE(snapshot_version, ''), COALESCE(container_id, ''),
+			COALESCE(host_port, ''), status, health, last_used_at, last_ensured_at, started_at, stopped_at,
+			COALESCE(last_error, ''), created_at, updated_at
+		FROM hosted_sessions
+		WHERE user_id = $1
+		ORDER BY COALESCE(last_used_at, updated_at) DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing hosted sessions: %w", err)
+	}
+	defer rows.Close()
+
+	sessions := make([]models.HostedSession, 0)
+	for rows.Next() {
+		var s models.HostedSession
+		if err := rows.Scan(
+			&s.ID, &s.UserID, &s.ServerID, &s.SnapshotVersion, &s.ContainerID,
+			&s.HostPort, &s.Status, &s.Health, &s.LastUsedAt, &s.LastEnsuredAt, &s.StartedAt,
+			&s.StoppedAt, &s.LastError, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning hosted session: %w", err)
+		}
+		sessions = append(sessions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating hosted sessions: %w", err)
+	}
+	return sessions, nil
 }
 
 func (db *DB) GetServerVersions(ctx context.Context, serverID string) ([]models.ServerVersion, error) {
