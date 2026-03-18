@@ -17,6 +17,7 @@ A UI-driven platform to create **Model Context Protocol (MCP) servers** without 
 9. [Example: Location Lookup Tool](#example-location-lookup-tool)
 10. [Deployment](#deployment)
 11. [Security Score](#security-score)
+12. [Try Chat with Hosted Tools](#try-chat-with-hosted-tools)
 
 ---
 
@@ -303,6 +304,17 @@ See [Security Best Practices](./security-best-practices.md) for the full mapping
 
 Details are in [Creating Servers](./creating-servers.md) (Tool template gallery, Reviewing tool changes, Per-tool test presets, Dry-run mode, In-app help).
 
+### 7. Try Chat with Hosted Tools
+
+Use **Try Chat** from Server Editor, Marketplace, or Compositions to run an LLM chat session against the selected target.
+
+- Provider/model are loaded from backend config (`llm-config.yaml`).
+- Target context (server/marketplace/composition) is auto-bound when you launch from those pages.
+- Tool traces (name, args, duration, success/failure) are shown in-session.
+- Target must have a hosted deployment; if runtime is still warming up, Try Chat returns a temporary unavailable message and retries are safe.
+
+![Try Chat modal with target context and tool traces](./images/image_8.png)
+
 ---
 
 ## 3 Powerful Features
@@ -481,6 +493,28 @@ All `/api/servers`, `/api/tools`, `/api/resources`, `/api/prompts`, `/api/polici
 | GET | `/api/marketplace` | List published public servers |
 | GET | `/api/marketplace/:id` | Get server + versions + security score |
 | GET | `/api/marketplace/:id/download` | Download latest version ZIP |
+
+### Hosted Runtime (auth required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/servers/:id/hosted-publish` | Deploy or ensure hosted runtime for a server |
+| GET | `/api/servers/:id/hosted-status` | Get hosted status/details for a server |
+| POST | `/api/marketplace/:id/hosted-deploy` | Deploy marketplace item to your hosted runtime |
+| GET | `/api/marketplace/:id/hosted-status` | Get hosted status for deployed marketplace target |
+| POST | `/api/compositions/:id/hosted-deploy` | Deploy composition to your hosted runtime |
+| GET | `/api/compositions/:id/hosted-status` | Get hosted status for deployed composition target |
+| GET | `/api/hosted/sessions` | List hosted sessions for current user |
+| GET | `/api/hosted/sessions/:server_id/health` | Session health check |
+| POST | `/api/hosted/sessions/:server_id/restart` | Restart hosted session |
+| POST | `/api/hosted/sessions/:server_id/stop` | Stop hosted session |
+
+### Try Chat (auth required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/try/config` | List enabled LLM providers/default provider |
+| POST | `/api/try/chat` | Run chat with optional target-bound hosted tool use |
 
 ### Import
 
@@ -789,6 +823,19 @@ Make MCP computes a **security score** (0–100%, grade A–F) for every server 
 | **Marketplace** | Each published server shows a score badge on the card. In the server inspector, the **Security** tab shows the full criteria list. |
 
 The score is based only on configuration we can evaluate (schemas, policies, hints, resources, versioning). For a full mapping of MCP security practices to Make MCP features, see [Security Best Practices](./security-best-practices.md).
+
+---
+
+## Try Chat with Hosted Tools
+
+Try Chat is the quickest way to demonstrate real tool-calling behavior against a deployed target:
+
+1. Deploy a target to hosted runtime from **Deploy** (Server, Marketplace, or Composition).
+2. Click **Try** / **Try Chat** from that same target page.
+3. Ask a task-oriented prompt (for example, "Call `get_joke` and summarize the result").
+4. Validate the **Tool Calls** panel for traceability (name, duration, success/error).
+
+If a target is not deployed yet, deploy first. If deployment just started, wait a few seconds for runtime warm-up and retry.
 
 ---
 
