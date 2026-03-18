@@ -695,7 +695,7 @@ export default function ServerEditor() {
                   width: '8px',
                   height: '8px',
                   borderRadius: '50%',
-                  background: '#22c55e',
+                  background: '#fff',
                   marginRight: '0.5rem',
                   verticalAlign: 'middle',
                 }}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,6 +10,12 @@ interface DocItem {
   title: string;
   description: string;
   icon: string;
+}
+
+interface TocItem {
+  level: number;
+  title: string;
+  id: string;
 }
 
 const docs: DocItem[] = [
@@ -40,6 +46,38 @@ const docs: DocItem[] = [
 ];
 
 const DOC_IDS = new Set(docs.map((d) => d.id));
+
+const slugifyHeading = (raw: string): string =>
+  raw
+    .toLowerCase()
+    .trim()
+    .replace(/[`*_~()[\]{}<>]/g, '')
+    .replace(/&/g, 'and')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+const extractTocItems = (markdown: string): TocItem[] => {
+  const items: TocItem[] = [];
+  const seen = new Map<string, number>();
+  const lines = markdown.split('\n');
+  for (const line of lines) {
+    const match = /^(#{1,3})\s+(.+?)\s*$/.exec(line);
+    if (!match) continue;
+    const level = match[1].length;
+    // Skip the page title h1; TOC starts from major sections.
+    if (level < 2 || level > 3) continue;
+    const title = match[2].trim();
+    const base = slugifyHeading(title);
+    if (!base) continue;
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    const id = count === 0 ? base : `${base}-${count}`;
+    items.push({ level, title, id });
+  }
+  return items;
+};
 
 export default function Docs() {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
@@ -87,6 +125,8 @@ export default function Docs() {
     if (DOC_IDS.has(withoutExt)) setSelectedDoc(withoutExt);
   };
 
+  const tocItems = useMemo(() => extractTocItems(content), [content]);
+
   if (selectedDoc) {
     const docMeta = docs.find((d) => d.id === selectedDoc);
     return (
@@ -123,69 +163,120 @@ export default function Docs() {
           </button>
         </div>
 
-        <div className="card">
-          <div
-            className="doc-content"
-            style={{
-              lineHeight: 1.7,
-              color: 'var(--text-primary)',
-            }}
-          >
-            {loading && (
-              <p style={{ color: 'var(--text-muted)' }}>
-                <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2, marginRight: '0.5rem' }} />
-                Loading…
+        <div className="docs-two-panel">
+          <div className="card docs-toc-panel">
+            <h3 className="card-title" style={{ marginBottom: '0.75rem' }}>
+              <i className="bi bi-list-ul" style={{ marginRight: '0.5rem' }}></i>
+              Table of Contents
+            </h3>
+            {loading && <p style={{ color: 'var(--text-muted)', margin: 0 }}>Loading…</p>}
+            {!loading && !error && tocItems.length === 0 && (
+              <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.875rem' }}>
+                No headings found in this document.
               </p>
             )}
-            {error && (
-              <p style={{ color: 'var(--danger-color)' }}>{error}</p>
+            {!loading && !error && tocItems.length > 0 && (
+              <nav aria-label="Document table of contents">
+                {tocItems.map((item) => (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    className="docs-toc-link"
+                    style={{ paddingLeft: item.level === 3 ? '1rem' : 0 }}
+                  >
+                    {item.title}
+                  </a>
+                ))}
+              </nav>
             )}
-            {!loading && !error && content && (
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeSlug]}
-                components={{
-                  a: ({ href, children, ...props }) => {
-                    const linkHref = href ?? '';
-                    if (linkHref && isInternalDocLink(linkHref)) {
+          </div>
+
+          <div className="card">
+            <div
+              className="doc-content"
+              style={{
+                lineHeight: 1.7,
+                color: 'var(--text-primary)',
+              }}
+            >
+              {loading && (
+                <p style={{ color: 'var(--text-muted)' }}>
+                  <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2, marginRight: '0.5rem' }} />
+                  Loading…
+                </p>
+              )}
+              {error && (
+                <p style={{ color: 'var(--danger-color)' }}>{error}</p>
+              )}
+              {!loading && !error && content && (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeSlug]}
+                  components={{
+                    a: ({ href, children, ...props }) => {
+                      const linkHref = href ?? '';
+                      if (linkHref && isInternalDocLink(linkHref)) {
+                        return (
+                          <button
+                            type="button"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              color: 'var(--primary-color)',
+                              cursor: 'pointer',
+                              textDecoration: 'none',
+                              font: 'inherit',
+                            }}
+                            onClick={() => navigateToDoc(linkHref)}
+                          >
+                            {children}
+                          </button>
+                        );
+                      }
+                      const isExternal = linkHref.startsWith('http://') || linkHref.startsWith('https://');
                       return (
-                        <button
-                          type="button"
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            color: 'var(--primary-color)',
-                            cursor: 'pointer',
-                            textDecoration: 'none',
-                            font: 'inherit',
-                          }}
-                          onClick={() => navigateToDoc(linkHref)}
+                        <a
+                          href={linkHref}
+                          {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                          {...props}
                         >
                           {children}
-                        </button>
+                        </a>
                       );
-                    }
-                    const isExternal = linkHref.startsWith('http://') || linkHref.startsWith('https://');
-                    return (
-                      <a
-                        href={linkHref}
-                        {...(isExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                        {...props}
-                      >
-                        {children}
-                      </a>
-                    );
-                  },
-                }}
-              >
-                {content}
-              </ReactMarkdown>
-            )}
+                    },
+                  }}
+                >
+                  {content}
+                </ReactMarkdown>
+              )}
+            </div>
           </div>
         </div>
 
         <style>{`
+          .docs-two-panel {
+            display: grid;
+            grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+            gap: 1rem;
+            align-items: start;
+          }
+          .docs-toc-panel {
+            position: sticky;
+            top: 1rem;
+            max-height: calc(100vh - 7rem);
+            overflow: auto;
+          }
+          .docs-toc-link {
+            display: block;
+            padding: 0.25rem 0;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+          }
+          .docs-toc-link:hover {
+            color: var(--primary-color);
+          }
           .doc-content h1 { font-size: 1.75rem; margin: 0 0 1rem 0; color: var(--text-primary); }
           .doc-content h2 { font-size: 1.375rem; margin: 1.5rem 0 0.75rem 0; color: var(--text-primary); border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem; }
           .doc-content h3 { font-size: 1.125rem; margin: 1.25rem 0 0.5rem 0; color: var(--text-primary); }
@@ -205,6 +296,15 @@ export default function Docs() {
           .doc-content ul, .doc-content ol { margin: 0.75rem 0; padding-left: 1.5rem; }
           .doc-content li { margin: 0.25rem 0; }
           .doc-content blockquote { border-left: 4px solid var(--card-border); margin: 1rem 0; padding-left: 1rem; color: var(--text-secondary); }
+          @media (max-width: 992px) {
+            .docs-two-panel {
+              grid-template-columns: 1fr;
+            }
+            .docs-toc-panel {
+              position: static;
+              max-height: none;
+            }
+          }
         `}</style>
       </div>
     );
