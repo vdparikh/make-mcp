@@ -1432,6 +1432,92 @@ func (db *DB) PublishServerVersion(ctx context.Context, serverID, version, relea
 	return sv, nil
 }
 
+// CreateHostedServerVersion stores a hosted-only snapshot without mutating servers.latest_version.
+func (db *DB) CreateHostedServerVersion(ctx context.Context, serverID, publishedBy string, snapshot []byte) (*models.ServerVersion, error) {
+	version := fmt.Sprintf("hosted-%d", time.Now().UTC().UnixNano())
+	sv := &models.ServerVersion{
+		ID:           uuid.New().String(),
+		ServerID:     serverID,
+		Version:      version,
+		ReleaseNotes: "Hosted deployment",
+		Snapshot:     snapshot,
+		PublishedBy:  publishedBy,
+		PublishedAt:  time.Now(),
+	}
+
+	var publishedByParam interface{}
+	if publishedBy == "" {
+		publishedByParam = nil
+	} else {
+		publishedByParam = publishedBy
+	}
+
+	_, err := db.pool.Exec(ctx,
+		`INSERT INTO server_versions (id, server_id, version, release_notes, snapshot, published_by, published_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		sv.ID, sv.ServerID, sv.Version, sv.ReleaseNotes, sv.Snapshot, publishedByParam, sv.PublishedAt)
+	if err != nil {
+		return nil, fmt.Errorf("inserting hosted server version: %w", err)
+	}
+	return sv, nil
+}
+
+// GetLatestHostedServerVersion returns the latest hosted-only snapshot for a server.
+func (db *DB) GetLatestHostedServerVersion(ctx context.Context, serverID string) (*models.ServerVersion, error) {
+	var v models.ServerVersion
+	var publishedBy *string
+	err := db.pool.QueryRow(ctx,
+		`SELECT id, server_id, version, COALESCE(release_notes, ''), snapshot, published_by, published_at
+		 FROM server_versions
+		 WHERE server_id = $1 AND release_notes = 'Hosted deployment'
+		 ORDER BY published_at DESC
+		 LIMIT 1`, serverID).
+		Scan(&v.ID, &v.ServerID, &v.Version, &v.ReleaseNotes, &v.Snapshot, &publishedBy, &v.PublishedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying latest hosted server version: %w", err)
+	}
+	if publishedBy != nil {
+		v.PublishedBy = *publishedBy
+	}
+	return &v, nil
+}
+
+// GetLatestNonHostedServerVersion returns latest non-hosted snapshot for a server.
+func (db *DB) GetLatestNonHostedServerVersion(ctx context.Context, serverID string) (*models.ServerVersion, error) {
+	var v models.ServerVersion
+	var publishedBy *string
+	err := db.pool.QueryRow(ctx,
+		`SELECT id, server_id, version, COALESCE(release_notes, ''), snapshot, published_by, published_at
+		 FROM server_versions
+		 WHERE server_id = $1 AND COALESCE(release_notes, '') <> 'Hosted deployment'
+		 ORDER BY published_at DESC
+		 LIMIT 1`, serverID).
+		Scan(&v.ID, &v.ServerID, &v.Version, &v.ReleaseNotes, &v.Snapshot, &publishedBy, &v.PublishedAt)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying latest non-hosted server version: %w", err)
+	}
+	if publishedBy != nil {
+		v.PublishedBy = *publishedBy
+	}
+	return &v, nil
+}
+
+func (db *DB) UpdateServerLatestVersion(ctx context.Context, serverID, latestVersion string) error {
+	_, err := db.pool.Exec(ctx,
+		`UPDATE servers SET latest_version = $2, updated_at = NOW() WHERE id = $1`,
+		serverID, latestVersion)
+	if err != nil {
+		return fmt.Errorf("updating server latest_version: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) GetServerVersions(ctx context.Context, serverID string) ([]models.ServerVersion, error) {
 	rows, err := db.pool.Query(ctx,
 		`SELECT id, server_id, version, COALESCE(release_notes, ''), snapshot, published_by, published_at 

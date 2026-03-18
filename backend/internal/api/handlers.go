@@ -865,7 +865,7 @@ func (h *Handler) PublishServer(c *gin.Context) {
 
 // HostedPublishRequest is the body for hosted-publish.
 type HostedPublishRequest struct {
-	Version string `json:"version"` // optional; if empty use server's latest or current version
+	Version string `json:"version"` // deprecated; ignored for hosted runtime selection
 }
 
 // HostedPublishResponse is returned after publishing to hosted.
@@ -879,17 +879,22 @@ type HostedPublishResponse struct {
 }
 
 type HostedStatusResponse struct {
-	Running    bool   `json:"running"`
-	UserID     string `json:"user_id,omitempty"`
-	ServerID   string `json:"server_id,omitempty"`
-	ServerSlug string `json:"server_slug,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Endpoint   string `json:"endpoint,omitempty"`
+	Running         bool   `json:"running"`
+	UserID          string `json:"user_id,omitempty"`
+	ServerID        string `json:"server_id,omitempty"`
+	ServerSlug      string `json:"server_slug,omitempty"`
+	Version         string `json:"version,omitempty"`
+	SnapshotID      string `json:"snapshot_id,omitempty"`
+	SnapshotVersion string `json:"snapshot_version,omitempty"`
+	StartedAt       string `json:"started_at,omitempty"`
+	LastEnsuredAt   string `json:"last_ensured_at,omitempty"`
+	Endpoint        string `json:"endpoint,omitempty"`
+	MCPConfig       string `json:"mcp_config,omitempty"`
 	ContainerID string `json:"container_id,omitempty"`
 	HostPort   string `json:"host_port,omitempty"`
 }
 
-// HostedPublish publishes a version and makes it available at /api/users/:user_id/:server_slug/:version.
+// HostedPublish publishes the latest hosted snapshot and makes it available at /api/users/:user_id/:server_slug.
 func (h *Handler) HostedPublish(c *gin.Context) {
 	id := c.Param("id")
 	server := h.requireServerOwnership(c, id)
@@ -909,36 +914,30 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	var req HostedPublishRequest
 	_ = c.ShouldBindJSON(&req)
 
-	version := strings.TrimSpace(req.Version)
-	if version == "" {
-		version = server.LatestVersion
-	}
-	if version == "" {
-		version = server.Version
-	}
-	if version == "" {
-		version = "1.0.0"
+	// Keep request backward-compatible, but hosted deployment no longer uses user-provided version.
+	// Also repair older data where hosted snapshots polluted servers.latest_version.
+	if strings.HasPrefix(strings.TrimSpace(server.LatestVersion), "hosted-") {
+		if nonHosted, err := h.db.GetLatestNonHostedServerVersion(c.Request.Context(), id); err == nil {
+			nextLatest := ""
+			if nonHosted != nil {
+				nextLatest = nonHosted.Version
+				server.LatestVersion = nonHosted.Version
+			}
+			_ = h.db.UpdateServerLatestVersion(c.Request.Context(), id, nextLatest)
+		}
 	}
 
-	// Ensure this version exists (publish if not)
-	sv, err := h.db.GetServerVersion(c.Request.Context(), id, version)
+	snapshot, err := json.Marshal(server)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create snapshot"})
+		return
+	}
+	sv, err := h.db.CreateHostedServerVersion(c.Request.Context(), id, userID, snapshot)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if sv == nil {
-		// Publish current server state as this version
-		snapshot, err := json.Marshal(server)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create snapshot"})
-			return
-		}
-		sv, err = h.db.PublishServerVersion(c.Request.Context(), id, version, "Hosted deployment", userID, snapshot)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
+	hostedVersion := sv.Version
 
 	// Ensure one running container for this (user, server), using the selected published version snapshot.
 	snapshotServer := *server
@@ -950,11 +949,11 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	}
 	observabilityEnv := h.hostedObservabilityEnv(c, server)
 	if h.hostedMgr != nil {
-		if cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, server.ID, version, &snapshotServer, observabilityEnv); err != nil {
+		if cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, server.ID, hostedVersion, &snapshotServer, observabilityEnv); err != nil {
 			// Log but do not fail the publish.
 			fmt.Printf("HostedPublish: failed to ensure container for user=%s server=%s: %v\n", userID, server.ID, err)
 		} else {
-			fmt.Printf("HostedPublish: ensured container for user=%s server=%s version=%s container=%s host_port=%s\n", userID, server.ID, version, cfg.ContainerID, cfg.HostPort)
+			fmt.Printf("HostedPublish: ensured container for user=%s server=%s version=%s container=%s host_port=%s\n", userID, server.ID, hostedVersion, cfg.ContainerID, cfg.HostPort)
 		}
 	}
 
@@ -962,24 +961,7 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
 	endpoint := baseURL + "/users/" + userID + "/" + slug
 
-	// MCP config for IDE (Cursor, Claude Desktop, etc.): URL transport + observability env.
-	serverConfig := map[string]interface{}{
-		"url": endpoint,
-	}
-	if obsKey := strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_KEY"]); obsKey != "" {
-		serverConfig["env"] = map[string]string{
-			"MCP_OBSERVABILITY_ENDPOINT":   h.hostedObservabilityEndpoint(c),
-			"MCP_OBSERVABILITY_KEY":        obsKey,
-			"MCP_OBSERVABILITY_USER_ID":    strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_USER_ID"]),
-			"MCP_OBSERVABILITY_CLIENT_AGENT": "Cursor",
-			"MCP_OBSERVABILITY_USER_TOKEN": "",
-		}
-	}
-	mcpConfigBytes, err := json.MarshalIndent(map[string]interface{}{
-		"mcpServers": map[string]interface{}{
-			slug: serverConfig,
-		},
-	}, "", "  ")
+	mcpConfigBytes, err := h.buildHostedMCPConfig(c, slug, endpoint, observabilityEnv)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build mcp config"})
 		return
@@ -990,7 +972,7 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 		BaseURL:    baseURL,
 		UserID:     userID,
 		ServerSlug: slug,
-		Version:    version,
+		Version:    hostedVersion,
 		Endpoint:   endpoint,
 		MCPConfig:  mcpConfig,
 	})
@@ -1064,6 +1046,26 @@ func (h *Handler) hostedObservabilityEnv(c *gin.Context, server *models.Server) 
 	return env
 }
 
+func (h *Handler) buildHostedMCPConfig(c *gin.Context, slug, endpoint string, observabilityEnv map[string]string) ([]byte, error) {
+	serverConfig := map[string]interface{}{
+		"url": endpoint,
+	}
+	if obsKey := strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_KEY"]); obsKey != "" {
+		serverConfig["env"] = map[string]string{
+			"MCP_OBSERVABILITY_ENDPOINT":     h.hostedObservabilityEndpoint(c),
+			"MCP_OBSERVABILITY_KEY":          obsKey,
+			"MCP_OBSERVABILITY_USER_ID":      strings.TrimSpace(observabilityEnv["MCP_OBSERVABILITY_USER_ID"]),
+			"MCP_OBSERVABILITY_CLIENT_AGENT": "Cursor",
+			"MCP_OBSERVABILITY_USER_TOKEN":   "",
+		}
+	}
+	return json.MarshalIndent(map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			slug: serverConfig,
+		},
+	}, "", "  ")
+}
+
 func (h *Handler) HostedStatus(c *gin.Context) {
 	id := c.Param("id")
 	server := h.requireServerOwnership(c, id)
@@ -1091,15 +1093,40 @@ func (h *Handler) HostedStatus(c *gin.Context) {
 	}
 	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
 	slug := database.ServerSlug(server.Name)
+	obsEnv := h.hostedObservabilityEnv(c, server)
+	mcpConfigBytes, err := h.buildHostedMCPConfig(c, slug, baseURL+"/users/"+userID+"/"+slug, obsEnv)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build mcp config"})
+		return
+	}
+	startedAt := ""
+	if !cfg.StartedAt.IsZero() {
+		startedAt = cfg.StartedAt.UTC().Format(time.RFC3339)
+	}
+	lastEnsuredAt := ""
+	if !cfg.LastUsedAt.IsZero() {
+		lastEnsuredAt = cfg.LastUsedAt.UTC().Format(time.RFC3339)
+	}
+	snapshotID := ""
+	snapshotVersion := cfg.Version
+	if sv, svErr := h.db.GetServerVersion(c.Request.Context(), server.ID, cfg.Version); svErr == nil && sv != nil {
+		snapshotID = sv.ID
+		snapshotVersion = sv.Version
+	}
 	c.JSON(http.StatusOK, HostedStatusResponse{
-		Running:     true,
-		UserID:      userID,
-		ServerID:    server.ID,
-		ServerSlug:  slug,
-		Version:     cfg.Version,
-		Endpoint:    baseURL + "/users/" + userID + "/" + slug,
-		ContainerID: cfg.ContainerID,
-		HostPort:    cfg.HostPort,
+		Running:         true,
+		UserID:          userID,
+		ServerID:        server.ID,
+		ServerSlug:      slug,
+		Version:         cfg.Version,
+		SnapshotID:      snapshotID,
+		SnapshotVersion: snapshotVersion,
+		StartedAt:       startedAt,
+		LastEnsuredAt:   lastEnsuredAt,
+		Endpoint:        baseURL + "/users/" + userID + "/" + slug,
+		MCPConfig:       string(mcpConfigBytes),
+		ContainerID:     cfg.ContainerID,
+		HostPort:        cfg.HostPort,
 	})
 }
 
@@ -1111,7 +1138,7 @@ type hostedResolvedTarget struct {
 	Snapshot   *models.Server
 }
 
-// resolveHostedTarget resolves user/slug/(optional version) to a published snapshot.
+// resolveHostedTarget resolves user/slug to the latest hosted snapshot.
 func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, error) {
 	userID := c.Param("user_id")
 	serverSlug := c.Param("server_slug")
@@ -1127,18 +1154,7 @@ func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, er
 		return nil, nil
 	}
 
-	version := strings.TrimSpace(c.Param("version"))
-	if version == "" {
-		version = strings.TrimSpace(server.LatestVersion)
-	}
-	if version == "" {
-		version = strings.TrimSpace(server.Version)
-	}
-	if version == "" {
-		return nil, nil
-	}
-
-	sv, err := h.db.GetServerVersion(c.Request.Context(), server.ID, version)
+	sv, err := h.db.GetLatestHostedServerVersion(c.Request.Context(), server.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -1153,7 +1169,7 @@ func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, er
 		UserID:     userID,
 		ServerID:   server.ID,
 		ServerSlug: serverSlug,
-		Version:    version,
+		Version:    sv.Version,
 		Snapshot:   &snap,
 	}, nil
 }

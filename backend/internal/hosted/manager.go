@@ -28,6 +28,7 @@ type ContainerConfig struct {
 	ContainerID string
 	HostPort    string
 	Version     string
+	StartedAt   time.Time
 	LastUsedAt  time.Time
 }
 
@@ -121,6 +122,7 @@ func (m *Manager) EnsureContainer(ctx context.Context, userID string, serverID s
 
 	k := key(userID, serverID)
 	if cfg, err := m.reconcileContainers(ctx, userID, serverID, version, envVars); err == nil && cfg != nil {
+		cfg.LastUsedAt = time.Now()
 		m.mu.Lock()
 		m.containers[k] = cfg
 		m.mu.Unlock()
@@ -235,6 +237,7 @@ func (m *Manager) startContainer(ctx context.Context, rootDir string, userID str
 		ContainerID: resp.ID,
 		HostPort:    hostPort,
 		Version:     version,
+		StartedAt:   time.Now(),
 		LastUsedAt:  time.Now(),
 	}, nil
 }
@@ -253,11 +256,19 @@ func (m *Manager) GetContainerForServer(ctx context.Context, userID string, serv
 		return nil, nil
 	}
 	c := list[0]
+	startedAt, _ := m.containerStartedAt(ctx, c.ID)
+	lastEnsured := time.Time{}
+	m.mu.Lock()
+	if cfg, ok := m.containers[key(userID, serverID)]; ok && cfg.ContainerID == c.ID {
+		lastEnsured = cfg.LastUsedAt
+	}
+	m.mu.Unlock()
 	return &ContainerConfig{
 		ContainerID: c.ID,
 		HostPort:    hostPortFromContainer(c),
 		Version:     c.Labels[labelVersion],
-		LastUsedAt:  time.Now(),
+		StartedAt:   startedAt,
+		LastUsedAt:  lastEnsured,
 	}, nil
 }
 
@@ -281,6 +292,7 @@ func (m *Manager) reconcileContainers(ctx context.Context, userID string, server
 				ContainerID: c.ID,
 				HostPort:    hostPortFromContainer(c),
 				Version:     ver,
+				StartedAt:   time.Now(),
 				LastUsedAt:  time.Now(),
 			}
 			matches, matchErr := m.containerEnvMatches(ctx, c.ID, envVars)
@@ -347,6 +359,21 @@ func (m *Manager) containerEnvMatches(ctx context.Context, containerID string, e
 		}
 	}
 	return true, nil
+}
+
+func (m *Manager) containerStartedAt(ctx context.Context, containerID string) (time.Time, error) {
+	inspect, err := m.cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if inspect.State == nil || strings.TrimSpace(inspect.State.StartedAt) == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, inspect.State.StartedAt)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
 }
 
 func (m *Manager) isContainerRunning(ctx context.Context, containerID string) (bool, error) {

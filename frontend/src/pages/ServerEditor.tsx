@@ -38,6 +38,13 @@ function serverSlug(name: string): string {
   return name.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
 }
 
+function formatRuntimeTime(ts?: string): string {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  return d.toLocaleString();
+}
+
 function SecurityScorePanel({ serverId }: { serverId: string }) {
   const [result, setResult] = useState<SecurityScoreResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -290,7 +297,6 @@ export default function ServerEditor() {
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [deployTargetEnv, setDeployTargetEnv] = useState<EnvProfileKey | ''>('');
   // Hosted (Publish MCP) state
-  const [hostedPublishVersion, setHostedPublishVersion] = useState('');
   const [hostedPublishing, setHostedPublishing] = useState(false);
   const [hostedResult, setHostedResult] = useState<HostedPublishResponse | null>(null);
   const [hostedRuntime, setHostedRuntime] = useState<HostedStatusResponse | null>(null);
@@ -361,9 +367,9 @@ export default function ServerEditor() {
   }, [activeTab, id]);
 
   useEffect(() => {
-    if (!id || !showDeployModal || selectedDeploy !== 'hosted') return;
+    if (!id) return;
     let cancelled = false;
-    setHostedStatusLoading(true);
+    if (showDeployModal) setHostedStatusLoading(true);
     hostedStatus(id)
       .then((status) => {
         if (!cancelled) setHostedRuntime(status);
@@ -372,10 +378,23 @@ export default function ServerEditor() {
         if (!cancelled) setHostedRuntime({ running: false });
       })
       .finally(() => {
-        if (!cancelled) setHostedStatusLoading(false);
+        if (!cancelled && showDeployModal) setHostedStatusLoading(false);
       });
     return () => { cancelled = true; };
-  }, [id, showDeployModal, selectedDeploy]);
+  }, [id, showDeployModal, selectedDeploy, hostedResult]);
+
+  const hostedDisplay: HostedPublishResponse | null = hostedResult ?? (
+    hostedRuntime?.running && hostedRuntime.endpoint
+      ? {
+          base_url: '',
+          user_id: hostedRuntime.user_id || '',
+          server_slug: hostedRuntime.server_slug || '',
+          version: hostedRuntime.version || '',
+          endpoint: hostedRuntime.endpoint,
+          mcp_config: hostedRuntime.mcp_config || '',
+        }
+      : null
+  );
 
   const loadServer = async () => {
     try {
@@ -667,8 +686,21 @@ export default function ServerEditor() {
           </button>
           <button 
             className="btn btn-success" 
-            onClick={() => setShowDeployModal(true)}
+            onClick={() => { setShowDeployModal(true); setSelectedDeploy('hosted'); }}
           >
+            {hostedRuntime?.running && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: '#22c55e',
+                  marginRight: '0.5rem',
+                  verticalAlign: 'middle',
+                }}
+              />
+            )}
             <i className="bi bi-rocket-takeoff"></i>
             Deploy
           </button>
@@ -1229,6 +1261,42 @@ export default function ServerEditor() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem' }}>
               <button
+                onClick={() => { setSelectedDeploy('hosted'); }}
+                style={{
+                  padding: '1.5rem',
+                  background: selectedDeploy === 'hosted' ? 'rgba(139, 92, 246, 0.1)' : 'var(--dark-bg)',
+                  border: `2px solid ${selectedDeploy === 'hosted' ? '#8b5cf6' : 'var(--card-border)'}`,
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  transition: 'all 0.2s',
+                  position: 'relative',
+                }}
+              >
+                {hostedRuntime?.running && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '0.5rem',
+                      right: '0.5rem',
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '50%',
+                      background: '#22c55e',
+                    }}
+                    title="Hosted runtime is running"
+                  />
+                )}
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', color: selectedDeploy === 'hosted' ? '#8b5cf6' : 'var(--text-secondary)' }}>
+                  <i className="bi bi-globe"></i>
+                </div>
+                <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>Publish MCP</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: 0 }}>
+                  Hosted at URL
+                </p>
+              </button>
+
+              <button
                 onClick={() => setSelectedDeploy('nodejs')}
                 style={{
                   padding: '1.5rem',
@@ -1312,26 +1380,6 @@ export default function ServerEditor() {
                 </p>
               </button>
 
-              <button
-                onClick={() => { setSelectedDeploy('hosted'); }}
-                style={{
-                  padding: '1.5rem',
-                  background: selectedDeploy === 'hosted' ? 'rgba(139, 92, 246, 0.1)' : 'var(--dark-bg)',
-                  border: `2px solid ${selectedDeploy === 'hosted' ? '#8b5cf6' : 'var(--card-border)'}`,
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  textAlign: 'center',
-                  transition: 'all 0.2s',
-                }}
-              >
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', color: selectedDeploy === 'hosted' ? '#8b5cf6' : 'var(--text-secondary)' }}>
-                  <i className="bi bi-globe"></i>
-                </div>
-                <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>Publish MCP</h4>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', margin: 0 }}>
-                  Hosted at URL
-                </p>
-              </button>
             </div>
           </div>
 
@@ -1703,7 +1751,7 @@ docker run -it --rm \\
                 ) : hostedRuntime?.running ? (
                   <span style={{ color: 'var(--success-color)' }}>
                     <i className="bi bi-check-circle" style={{ marginRight: '0.5rem' }}></i>
-                    Already running{hostedRuntime.version ? ` (version ${hostedRuntime.version})` : ''}.
+                    Already running.
                   </span>
                 ) : (
                   <span style={{ color: 'var(--text-muted)' }}>
@@ -1713,21 +1761,64 @@ docker run -it --rm \\
                 )}
               </div>
 
-              {!hostedResult ? (
-                <>
+              {hostedDisplay && (
+                <div style={{ marginBottom: '1rem' }}>
                   <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label className="form-label" style={{ fontWeight: 600 }}>Version (optional)</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder={server?.latest_version || server?.version || '1.0.0'}
-                      value={hostedPublishVersion}
-                      onChange={(e) => setHostedPublishVersion(e.target.value)}
-                    />
+                    <label className="form-label" style={{ fontWeight: 600 }}>Server URL</label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        readOnly
+                        value={hostedDisplay.endpoint}
+                        style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => { navigator.clipboard.writeText(hostedDisplay.endpoint); toast.success('URL copied'); }}
+                      >
+                        <i className="bi bi-clipboard"></i> Copy
+                      </button>
+                    </div>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', marginBottom: 0 }}>
-                      Leave empty to use latest published version or current version. If the version does not exist, it will be published now.
+                      Your app is available at: <strong>/users/{hostedDisplay.user_id}/{hostedDisplay.server_slug}</strong>
                     </p>
                   </div>
+                  <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'var(--hover-bg)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem 1rem', fontSize: '0.8125rem' }}>
+                      <span><strong>Snapshot version:</strong> {hostedRuntime?.snapshot_version || hostedRuntime?.version || hostedDisplay.version || '—'}</span>
+                      <span><strong>Snapshot id:</strong> {hostedRuntime?.snapshot_id || '—'}</span>
+                      <span><strong>Started at:</strong> {formatRuntimeTime(hostedRuntime?.started_at)}</span>
+                      <span><strong>Last ensured:</strong> {formatRuntimeTime(hostedRuntime?.last_ensured_at)}</span>
+                    </div>
+                  </div>
+                  {hostedDisplay.mcp_config && (
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontWeight: 600 }}>MCP config (for your IDE)</label>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                        Add this to your MCP client config (e.g. Cursor <code>mcp.json</code>, Claude Desktop settings). You can edit the server name key if you like.
+                      </p>
+                      <div style={{ position: 'relative' }}>
+                        <pre style={{ padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                          {hostedDisplay.mcp_config}
+                        </pre>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }}
+                          onClick={() => { navigator.clipboard.writeText(hostedDisplay.mcp_config); toast.success('MCP config copied'); }}
+                        >
+                          <i className="bi bi-clipboard"></i> Copy config
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(
+                <>
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -1735,8 +1826,7 @@ docker run -it --rm \\
                       if (!id) return;
                       setHostedPublishing(true);
                       try {
-                        const v = hostedPublishVersion.trim() || undefined;
-                        const result = await hostedPublish(id, v);
+                        const result = await hostedPublish(id);
                         setHostedResult(result);
                         setHostedRuntime({
                           running: true,
@@ -1768,50 +1858,6 @@ docker run -it --rm \\
                     )}
                   </button>
                 </>
-              ) : (
-                <div>
-                  <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label className="form-label" style={{ fontWeight: 600 }}>Server URL</label>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        className="form-control"
-                        readOnly
-                        value={hostedResult.endpoint}
-                        style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => { navigator.clipboard.writeText(hostedResult!.endpoint); toast.success('URL copied'); }}
-                      >
-                        <i className="bi bi-clipboard"></i> Copy
-                      </button>
-                    </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', marginBottom: 0 }}>
-                      Your app is available at: <strong>/users/{hostedResult.user_id}/{hostedResult.server_slug}</strong>
-                    </p>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontWeight: 600 }}>MCP config (for your IDE)</label>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                      Add this to your MCP client config (e.g. Cursor <code>mcp.json</code>, Claude Desktop settings). You can edit the server name key if you like.
-                    </p>
-                    <div style={{ position: 'relative' }}>
-                      <pre style={{ padding: '1rem', borderRadius: '8px', fontSize: '0.8125rem', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                        {hostedResult.mcp_config}
-                      </pre>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{ position: 'absolute', top: '0.5rem', right: '0.5rem' }}
-                        onClick={() => { navigator.clipboard.writeText(hostedResult.mcp_config); toast.success('MCP config copied'); }}
-                      >
-                        <i className="bi bi-clipboard"></i> Copy config
-                      </button>
-                    </div>
-                  </div>
-                </div>
               )}
             </div>
           )}

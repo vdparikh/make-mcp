@@ -617,7 +617,12 @@ export interface HostedStatusResponse {
   server_id?: string;
   server_slug?: string;
   version?: string;
+  snapshot_id?: string;
+  snapshot_version?: string;
+  started_at?: string;
+  last_ensured_at?: string;
   endpoint?: string;
+  mcp_config?: string;
   container_id?: string;
   host_port?: string;
 }
