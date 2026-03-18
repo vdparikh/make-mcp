@@ -431,6 +431,12 @@ export const previewOpenAPIImport = async (spec: string): Promise<OpenAPIPreview
   return data;
 };
 
+/** Fetches OpenAPI spec from a public URL (http/https). Returns the spec body as string. */
+export const fetchOpenAPISpecFromUrl = async (url: string): Promise<{ spec: string }> => {
+  const { data } = await api.post<{ spec: string }>('/import/openapi/fetch-url', { url: url.trim() });
+  return data;
+};
+
 export const importOpenAPI = async (
   spec: string,
   options?: {

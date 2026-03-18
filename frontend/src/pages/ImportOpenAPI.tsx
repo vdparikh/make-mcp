@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import Editor from '@monaco-editor/react';
-import { previewOpenAPIImport, importOpenAPI, type OpenAPIPreview } from '../services/api';
+import { previewOpenAPIImport, importOpenAPI, fetchOpenAPISpecFromUrl, type OpenAPIPreview } from '../services/api';
 
 const sampleOpenAPI = `openapi: "3.0.0"
 info:
@@ -68,7 +68,11 @@ export default function ImportOpenAPI() {
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
+  // URL import
+  const [importUrl, setImportUrl] = useState('');
+  const [fetchingUrl, setFetchingUrl] = useState(false);
+
   // Override fields
   const [serverName, setServerName] = useState('');
   const [description, setDescription] = useState('');
@@ -114,7 +118,7 @@ export default function ImportOpenAPI() {
         base_url: baseUrl || undefined,
       });
       toast.success(`Created server with ${result.tools_created} tools`);
-      navigate(`/server/${result.server.id}`);
+      navigate(`/servers/${result.server.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to import OpenAPI spec';
       toast.error(message);
@@ -127,6 +131,33 @@ export default function ImportOpenAPI() {
     setSpec(sampleOpenAPI);
     setPreview(null);
     setError(null);
+  };
+
+  const handleFetchFromUrl = async () => {
+    const url = importUrl.trim();
+    if (!url) {
+      toast.error('Please enter an API spec URL');
+      return;
+    }
+    setFetchingUrl(true);
+    setError(null);
+    setPreview(null);
+    try {
+      const { spec: fetchedSpec } = await fetchOpenAPISpecFromUrl(url);
+      setSpec(fetchedSpec);
+      const result = await previewOpenAPIImport(fetchedSpec);
+      setPreview(result);
+      setServerName(result.server.name);
+      setDescription(result.server.description || '');
+      setBaseUrl(result.server.base_url || '');
+      toast.success(`Preview ready: ${result.tools_count} tools. Click "Create server" to create.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch or parse spec from URL';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setFetchingUrl(false);
+    }
   };
 
   return (
@@ -152,6 +183,48 @@ export default function ImportOpenAPI() {
           <i className="bi bi-arrow-left"></i>
           Back to Dashboard
         </Link>
+      </div>
+
+      {/* URL — paste API URL → load and preview */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <h3 className="card-title">
+            <i className="bi bi-link-45deg" style={{ marginRight: '0.5rem' }}></i>
+            Load from URL
+          </h3>
+        </div>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <input
+            type="url"
+            className="form-control"
+            placeholder="Paste API URL (e.g. https://api.example.com/openapi.json)"
+            value={importUrl}
+            onChange={(e) => setImportUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleFetchFromUrl()}
+            style={{ flex: '1', minWidth: '280px' }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleFetchFromUrl}
+            disabled={fetchingUrl || !importUrl.trim()}
+          >
+            {fetchingUrl ? (
+              <>
+                <i className="bi bi-hourglass-split"></i>
+                Loading...
+              </>
+            ) : (
+              <>
+                <i className="bi bi-download"></i>
+                Load
+              </>
+            )}
+          </button>
+        </div>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.5rem', marginBottom: 0 }}>
+          Paste a public OpenAPI 3.x URL (JSON or YAML). Load fetches the spec and shows the preview. Use <strong>Create server</strong> in the preview to create it.
+        </p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
@@ -189,12 +262,12 @@ export default function ImportOpenAPI() {
               {loading ? (
                 <>
                   <i className="bi bi-hourglass-split"></i>
-                  Parsing...
+                  Loading...
                 </>
               ) : (
                 <>
                   <i className="bi bi-search"></i>
-                  Preview Import
+                  Preview
                 </>
               )}
             </button>
@@ -218,14 +291,14 @@ export default function ImportOpenAPI() {
         {/* Right: Preview */}
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Import Preview</h3>
+            <h3 className="card-title">Preview</h3>
           </div>
 
           {!preview ? (
             <div className="empty-state">
               <i className="bi bi-arrow-left-circle"></i>
-              <h3>Paste & Preview</h3>
-              <p>Paste an OpenAPI spec and click "Preview Import" to see what will be created</p>
+              <h3>Preview</h3>
+              <p>Paste a spec or load from URL, then click Preview to see what will be created. Then click Create server.</p>
             </div>
           ) : (
             <div>
@@ -339,23 +412,23 @@ export default function ImportOpenAPI() {
                 </div>
               </div>
 
-              {/* Import Button */}
+              {/* Create server — only action that creates */}
               <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--card-border)' }}>
                 <button 
-                  className="btn btn-primary" 
+                  className="btn btn-primary  text-center fw-bold" 
                   onClick={handleImport}
                   disabled={importing}
-                  style={{ width: '100%' }}
+                  style={{ width: '100%', textAlign: 'center' }}
                 >
                   {importing ? (
                     <>
                       <i className="bi bi-hourglass-split"></i>
-                      Creating Server...
+                      Creating server...
                     </>
                   ) : (
                     <>
-                      <i className="bi bi-cloud-upload"></i>
-                      Import & Create Server
+                      <i className="bi bi-plus-circle"></i>
+                      Create server
                     </>
                   )}
                 </button>

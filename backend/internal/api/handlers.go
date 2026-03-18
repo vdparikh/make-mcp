@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -171,6 +172,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		// OpenAPI import (auth required; created server is owned by current user)
 		api.POST("/import/openapi", h.AuthMiddleware(), h.ImportOpenAPI)
 		api.POST("/import/openapi/preview", h.PreviewOpenAPIImport)
+		api.POST("/import/openapi/fetch-url", h.FetchOpenAPIFromURL)
 
 		api.GET("/docs/:doc", h.GetDoc)
 		api.GET("/health", h.HealthCheck)
@@ -2373,6 +2375,55 @@ func (h *Handler) PreviewOpenAPIImport(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, preview)
+}
+
+const (
+	openAPIFetchTimeout = 15 * time.Second
+	openAPIFetchMaxSize  = 2 * 1024 * 1024 // 2MB
+)
+
+// FetchOpenAPIFromURL fetches an OpenAPI spec from a public URL (no auth).
+// Validates URL scheme (http/https), enforces timeout and response size limit.
+func (h *Handler) FetchOpenAPIFromURL(c *gin.Context) {
+	var req struct {
+		URL string `json:"url" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url is required"})
+		return
+	}
+	rawURL := strings.TrimSpace(req.URL)
+	if rawURL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url is required"})
+		return
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
+		return
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url must use http or https"})
+		return
+	}
+	client := &http.Client{Timeout: openAPIFetchTimeout}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to fetch: %v", err)})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("url returned status %d", resp.StatusCode)})
+		return
+	}
+	body := io.LimitReader(resp.Body, openAPIFetchMaxSize)
+	b, err := io.ReadAll(body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to read response: %v", err)})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"spec": string(b)})
 }
 
 // ImportOpenAPI creates a server and tools from OpenAPI spec
