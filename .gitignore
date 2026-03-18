@@ -67,6 +67,7 @@ temp/
 
 # Generated files
 *.generated.*
+backend/generated-servers/
 
 # Debug
 debug/

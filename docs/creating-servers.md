@@ -761,6 +761,25 @@ Configure your MCP client to connect to the server (stdio or the port your serve
 2. Provide a GitHub token (with `repo` scope), owner, repo name, and optionally create the repo.
 3. The generated server is pushed to the repository.
 
+### Publish MCP (Hosted URL)
+
+1. Select **Publish MCP** in the Deploy tab.
+2. Click **Publish MCP** (or **Re-publish MCP** if already running).
+3. Copy the hosted URL and MCP config from the panel.
+
+Hosted URL format:
+
+```text
+http(s)://<host>/api/users/<user_id>/<server_slug>
+```
+
+Notes:
+
+- Hosted routing is **versionless** in the URL.
+- Each publish stores a **hosted-only snapshot** internally and starts/reuses a managed container.
+- Hosted snapshots are tracked separately from normal semantic release versions so your `Version` field in server configuration remains stable.
+- Runtime metadata in Deploy shows the active hosted snapshot id/version, started-at, and last-ensured timestamps.
+
 ### MCP Client Configuration
 
 Add to your MCP client (Cursor, Claude Desktop, etc.):
@@ -777,6 +796,8 @@ Add to your MCP client (Cursor, Claude Desktop, etc.):
 ```
 
 To verify the client invokes your server, use `run-with-log.mjs` as the entry point and run `tail -f mcp.log` (see [Getting Started - Verifying](../getting-started.md#verifying-that-your-client-eg-cursor-invokes-the-server)).
+
+For **hosted URL** servers, the process runs remotely inside a managed container. Any runtime environment variables (including observability vars) must be configured by the hosting platform; local `mcp.json` env is not the source of truth for hosted runtime configuration.
 
 ### Environment Variables
 

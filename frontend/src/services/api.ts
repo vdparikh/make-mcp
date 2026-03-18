@@ -602,6 +602,41 @@ export const getServerVersionSnapshot = async (serverId: string, version: string
   return data;
 };
 
+export interface HostedPublishResponse {
+  base_url: string;
+  user_id: string;
+  server_slug: string;
+  version: string;
+  endpoint: string;
+  mcp_config: string;
+}
+
+export interface HostedStatusResponse {
+  running: boolean;
+  user_id?: string;
+  server_id?: string;
+  server_slug?: string;
+  version?: string;
+  snapshot_id?: string;
+  snapshot_version?: string;
+  started_at?: string;
+  last_ensured_at?: string;
+  endpoint?: string;
+  mcp_config?: string;
+  container_id?: string;
+  host_port?: string;
+}
+
+export const hostedPublish = async (serverId: string, version?: string): Promise<HostedPublishResponse> => {
+  const { data } = await api.post<HostedPublishResponse>(`/servers/${serverId}/hosted-publish`, { version: version || '' });
+  return data;
+};
+
+export const hostedStatus = async (serverId: string): Promise<HostedStatusResponse> => {
+  const { data } = await api.get<HostedStatusResponse>(`/servers/${serverId}/hosted-status`);
+  return data;
+};
+
 export const downloadServerVersion = async (serverId: string, version: string): Promise<Blob> => {
   const { data } = await api.get<Blob>(`/servers/${serverId}/versions/${version}/download`, {
     responseType: 'blob',

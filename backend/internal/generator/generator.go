@@ -658,21 +658,20 @@ const tools = [
 {{range .Tools}}  {{toPascalCase .Name}},
 {{end}}];
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  mcpLog("ListTools requested (agent listing available tools)");
-  return {
-    tools: tools.map((t) => ({
-      name: t.name,
-      description: t.description ?? "",
-      inputSchema: t.inputSchema ?? {},
-      ...(t.readOnlyHint && { readOnlyHint: true }),
-      ...(t.destructiveHint && { destructiveHint: true }),
-    })),
-  };
-});
+type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+const hostedSessions = new Map<string, import("http").ServerResponse>();
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+function listToolsResult() {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description ?? "",
+    inputSchema: t.inputSchema ?? {},
+    ...(t.readOnlyHint && { readOnlyHint: true }),
+    ...(t.destructiveHint && { destructiveHint: true }),
+  }));
+}
+
+async function executeToolCall(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const argsStr = JSON.stringify(args || {});
   const argsPreview = argsStr.length > 200 ? argsStr.slice(0, 200) + "..." : argsStr;
   mcpLog("Tool called: " + name + " | args: " + argsPreview);
@@ -680,12 +679,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const tool = tools.find((t) => t.name === name);
   if (!tool) {
     mcpLog("Tool not found: " + name);
-    throw new Error("Tool not found: " + name);
+    return {
+      content: [{ type: "text", text: "Error executing " + name + ": Tool not found: " + name }],
+      isError: true,
+    };
   }
 
   const callStart = Date.now();
   try {
-    let result = await tool.execute(args || {});
+    const result = await tool.execute(args || {});
     mcpLog("Tool " + name + " completed in " + (Date.now() - callStart) + "ms");
     let text = JSON.stringify(result, null, 2);
     if (tool.outputDisplay === "table") {
@@ -700,7 +702,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const seen = new Set<string>();
         for (const row of rows) {
           for (const k of Object.keys(row)) {
-            if (!seen.has(k)) { seen.add(k); columns.push({ key: k, label: k }); }
+            if (!seen.has(k)) {
+              seen.add(k);
+              columns.push({ key: k, label: k });
+            }
           }
         }
         columns.sort((a, b) => a.key.localeCompare(b.key));
@@ -719,24 +724,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       if (!content) {
         for (const v of Object.values(obj)) {
-          if (typeof v === "string" && v.length > content.length) content = v;
+          if (typeof v === "string" && v.length > content.length) {
+            content = v;
+          }
         }
       }
       if (content) {
-        const title = (typeof obj.title === "string" && obj.title) ? obj.title : (typeof obj.name === "string" && obj.name) ? obj.name : "Result";
+        const title =
+          (typeof obj.title === "string" && obj.title) ? obj.title :
+          (typeof obj.name === "string" && obj.name) ? obj.name : "Result";
         const mcpApp = { text, _mcp_app: { widget: "card", props: { content, title } } };
         text = JSON.stringify(mcpApp, null, 2);
       }
     }
     reportObservabilityEvent(name, Date.now() - callStart, true, "", "").catch(() => {});
-    return {
-      content: [
-        {
-          type: "text",
-          text,
-        },
-      ],
-    };
+    return { content: [{ type: "text", text }] };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const durationMs = Date.now() - callStart;
@@ -744,21 +746,181 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const repairSuggestion = suggestRepair(errorMessage);
     reportObservabilityEvent(name, durationMs, false, errorMessage, repairSuggestion).catch(() => {});
     return {
-      content: [
-        {
-          type: "text",
-          text: "Error executing " + name + ": " + errorMessage,
-        },
-      ],
+      content: [{ type: "text", text: "Error executing " + name + ": " + errorMessage }],
       isError: true,
     };
   }
+}
+
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  mcpLog("ListTools requested (agent listing available tools)");
+  return { tools: listToolsResult() };
 });
 
-async function main() {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+  return executeToolCall(name, (args || {}) as Record<string, unknown>);
+});
+
+function getHeader(req: import("http").IncomingMessage, key: string): string {
+  const v = req.headers[key];
+  if (Array.isArray(v)) return v[0] || "";
+  return v || "";
+}
+
+function writeSSEEvent(res: import("http").ServerResponse, event: string, payload: unknown): void {
+  res.write("event: " + event + "\n");
+  res.write("data: " + JSON.stringify(payload) + "\n\n");
+}
+
+async function readJSONBody(req: import("http").IncomingMessage): Promise<Record<string, unknown>> {
+  return await new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 1024*1024) {
+        reject(new Error("request too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const body = Buffer.concat(chunks).toString("utf8");
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        resolve(parsed);
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function publicEndpointURL(req: import("http").IncomingMessage, fallbackPort: number): string {
+  const proto = getHeader(req, "x-forwarded-proto") || "http";
+  const host = getHeader(req, "x-forwarded-host") || getHeader(req, "host") || ("127.0.0.1:" + String(fallbackPort));
+  const uri = getHeader(req, "x-forwarded-uri") || req.url || "/";
+  return proto + "://" + host + uri;
+}
+
+async function runHTTPServer(): Promise<void> {
+  const port = Number(process.env.MCP_HTTP_PORT || "3000");
+  const http = await import("http");
+  const srv = http.createServer(async (req, res) => {
+    try {
+      if ((req.method || "GET").toUpperCase() === "GET") {
+        const accept = getHeader(req, "accept");
+        if (accept.includes("text/event-stream")) {
+          const sessionId = (await import("crypto")).randomUUID();
+          hostedSessions.set(sessionId, res);
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/event-stream");
+          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Connection", "keep-alive");
+          res.setHeader("X-Accel-Buffering", "no");
+          writeSSEEvent(res, "endpoint", { url: publicEndpointURL(req, port), sessionId });
+          const keepalive = setInterval(() => res.write(": ping\n\n"), 15000);
+          req.on("close", () => {
+            clearInterval(keepalive);
+            hostedSessions.delete(sessionId);
+          });
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ name: "{{.Name}}", version: "{{.Version}}", tools: tools.length }));
+        return;
+      }
+
+      if ((req.method || "").toUpperCase() !== "POST") {
+        res.statusCode = 405;
+        res.end("method not allowed");
+        return;
+      }
+
+      const body = await readJSONBody(req);
+      const method = typeof body.method === "string" ? body.method : "";
+      const id = (body as { id?: unknown }).id ?? null;
+      const sessionID = getHeader(req, "mcp-session-id");
+      let responsePayload: Record<string, unknown> = { jsonrpc: "2.0", id, error: { code: -32600, message: "invalid request" } };
+
+      if (method === "initialize") {
+        responsePayload = {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            protocolVersion: "2024-11-05",
+            capabilities: { tools: { listChanged: true } },
+            serverInfo: { name: "{{.Name}}", version: "{{.Version}}" },
+          },
+        };
+      } else if (method === "notifications/initialized") {
+        res.statusCode = 200;
+        res.end();
+        return;
+      } else if (method === "tools/list") {
+        responsePayload = { jsonrpc: "2.0", id, result: { tools: listToolsResult() } };
+      } else if (method === "tools/call") {
+        const params = (body.params || {}) as { name?: unknown; arguments?: unknown };
+        const toolName = typeof params.name === "string" ? params.name : "";
+        const rawArgs = params.arguments;
+        const toolArgs = (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)) ? rawArgs as Record<string, unknown> : {};
+        const toolResult = await executeToolCall(toolName, toolArgs);
+        responsePayload = {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: toolResult.content,
+            ...(toolResult.isError ? { isError: true } : {}),
+          },
+        };
+      } else {
+        responsePayload = { jsonrpc: "2.0", id, error: { code: -32601, message: "method not found: " + method } };
+      }
+
+      if (sessionID && hostedSessions.has(sessionID)) {
+        writeSSEEvent(hostedSessions.get(sessionID) as import("http").ServerResponse, "message", responsePayload);
+        res.statusCode = 202;
+        res.end();
+        return;
+      }
+
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(responsePayload));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.statusCode = 500;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: msg }));
+    }
+  });
+
+  await new Promise<void>((resolve) => {
+    srv.listen(port, "0.0.0.0", () => resolve());
+  });
+  mcpLog("Server running on HTTP on port " + String(port));
+}
+
+async function runStdioServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   mcpLog("Server running on stdio");
+}
+
+async function main() {
+  if ((process.env.MCP_TRANSPORT || "").toLowerCase() === "http") {
+    await runHTTPServer();
+    return;
+  }
+  await runStdioServer();
 }
 
 main().catch((error) => {
