@@ -628,6 +628,49 @@ export interface HostedStatusResponse {
   host_port?: string;
 }
 
+export interface TryProviderInfo {
+  name: string;
+  type: string;
+  model: string;
+  enabled: boolean;
+}
+
+export interface TryConfigResponse {
+  default_provider: string;
+  providers: TryProviderInfo[];
+}
+
+export interface TryChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface TryChatRequest {
+  provider?: string;
+  model?: string;
+  messages: TryChatMessage[];
+  target?: {
+    type?: string;
+    id?: string;
+    name?: string;
+  };
+}
+
+export interface TryChatResponse {
+  provider: string;
+  model: string;
+  message: string;
+  endpoint?: string;
+  tool_calls?: Array<{
+    name: string;
+    arguments?: string;
+    success: boolean;
+    duration_ms: number;
+    result?: unknown;
+    error?: string;
+  }>;
+}
+
 export interface HostedSession {
   id: string;
   user_id: string;
@@ -694,6 +737,16 @@ export const compositionHostedDeploy = async (compositionId: string): Promise<Ho
 
 export const compositionHostedStatus = async (compositionId: string): Promise<HostedStatusResponse> => {
   const { data } = await api.get<HostedStatusResponse>(`/compositions/${compositionId}/hosted-status`);
+  return data;
+};
+
+export const getTryConfig = async (): Promise<TryConfigResponse> => {
+  const { data } = await api.get<TryConfigResponse>('/try/config');
+  return data;
+};
+
+export const tryChat = async (request: TryChatRequest): Promise<TryChatResponse> => {
+  const { data } = await api.post<TryChatResponse>('/try/chat', request);
   return data;
 };
 

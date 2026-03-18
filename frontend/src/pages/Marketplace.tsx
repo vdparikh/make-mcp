@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { Server, ServerVersion, Tool, Resource, Prompt, SecurityScoreResult } from '../types';
 import { listMarketplace, getMarketplaceServer, downloadMarketplaceServer, marketplaceHostedDeploy, marketplaceHostedStatus } from '../services/api';
 import DeployOptionsModal from '../components/DeployOptionsModal';
+import { useTryChat } from '../contexts/TryChatContext';
 
 type InspectorTab = 'tools' | 'resources' | 'prompts' | 'versions' | 'security';
 
@@ -21,6 +22,7 @@ export default function Marketplace() {
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
   const navigate = useNavigate();
+  const { openTryChat } = useTryChat();
 
   useEffect(() => {
     loadMarketplace();
@@ -217,6 +219,12 @@ export default function Marketplace() {
                   <i className="bi bi-eye"></i> Inspect
                 </button>
                 <button
+                  className="btn btn-secondary"
+                  onClick={() => openTryChat({ type: 'marketplace', id: server.id, name: server.name })}
+                >
+                  <i className="bi bi-stars"></i> Try
+                </button>
+                <button
                   className="btn btn-primary"
                   onClick={() => openDeploy(server)}
                 >
@@ -314,6 +322,14 @@ export default function Marketplace() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => openTryChat({ type: 'marketplace', id: selectedServer.id, name: selectedServer.name })}
+                  style={{ padding: '0.5rem 1rem' }}
+                >
+                  <i className="bi bi-stars"></i>
+                  Try Chat
+                </button>
                 <button
                   className="btn btn-primary"
                   onClick={() => openDeploy(selectedServer)}
