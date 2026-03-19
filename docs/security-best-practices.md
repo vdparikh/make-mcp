@@ -13,6 +13,69 @@ The score is derived only from configuration we can see (schemas, policies, hint
 
 ---
 
+## Runtime Security Model (Hosted MCP)
+
+`Context + Policies` decides *what should happen*.  
+`Runtime security model` defines *how that decision is enforced safely at execution time*.
+
+For Make MCP hosted deployments, the runtime model is:
+
+1. **Authenticate caller at hosted boundary** (`bearer_token` or `no_auth`)
+2. **Optionally require caller identity** (`require_caller_identity` with `X-Make-MCP-Caller-Id`)
+3. **Enforce policy and execution limits** before/while tool code runs
+4. **Run in isolated, constrained container runtime**
+5. **Record auditable observability events** with caller attribution when present
+
+### Trust boundaries
+
+| Boundary | Risk | Runtime control in Make MCP |
+|----------|------|-----------------------------|
+| Client -> Hosted endpoint | Unauthenticated or anonymous calls | `hosted_auth_mode` + optional `require_caller_identity` |
+| Hosted proxy -> Tool execution | Over-broad tool execution / unsafe calls | Policies, tool schema validation, CLI allowlist, timeouts |
+| Container -> Host/network | Breakout, lateral movement, abuse | Non-root runtime, resource limits, restricted bind scope |
+| Runtime -> Observability | Missing attribution / weak audit trail | Caller and tenant headers propagated into runtime observability events |
+
+### Controls available today (and how to use them)
+
+| Control | Where to configure | Why it matters |
+|---------|--------------------|----------------|
+| **Endpoint auth mode** (`bearer_token` / `no_auth`) | Deploy -> Hosted -> Publish MCP -> Access & Security | Prevents unauthorized use of hosted URL (when Bearer is used) |
+| **Require caller identity** toggle | Deploy -> Hosted -> Publish MCP -> Access & Security | Enables per-user attribution; enforces `X-Make-MCP-Caller-Id` |
+| **Idle shutdown** | Deploy -> Hosted -> Publish MCP -> Access & Security | Reduces attack window and cost for inactive workloads |
+| **Policy rules** (rate, roles, approval, time-window) | Server Editor -> Policies | Runtime guardrails for dangerous/high-cost actions |
+| **Destructive / read-only hints** | Tool Editor -> Schema | Lets clients/gateways enforce confirmation and safer execution paths |
+| **CLI command allowlist** | Tool Editor -> Config (CLI tools) | Reduces command-injection blast radius |
+| **Observability reporting** | Server -> Observability | Auditable runtime history (caller, tool, status, latency) |
+
+### How to apply this model in Make MCP (recommended flow)
+
+1. **Start with endpoint protection**
+   - Set `hosted_auth_mode` to `bearer_token` unless you intentionally need open access.
+2. **Turn on caller attribution**
+   - Enable **Require caller identity** to force `X-Make-MCP-Caller-Id`.
+   - Optionally pass `X-Make-MCP-Tenant-Id` for multi-tenant reporting.
+3. **Constrain tool behavior**
+   - Add policy rules for rate limits, role checks, approval gates, and business-hour windows.
+   - For CLI tools, configure `allowed_commands`.
+4. **Mark tool risk explicitly**
+   - Set read-only/destructive hints in tool schema.
+5. **Validate with observability**
+   - Confirm events show caller identity, tenant (if provided), and policy outcomes.
+6. **Operate through hosted sessions**
+   - Use hosted session controls (health/restart/stop) for runtime hygiene and incident response.
+
+### Minimum production baseline
+
+Use this baseline for most hosted deployments:
+
+- `hosted_auth_mode = bearer_token`
+- `require_caller_identity = true`
+- At least one policy per destructive tool
+- `allowed_commands` for every CLI tool
+- Observability enabled and reviewed regularly
+
+---
+
 ## 1. Server and supply-chain security
 
 | Practice | In Make MCP |

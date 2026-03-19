@@ -61,6 +61,7 @@ export default function Sidebar() {
           <Link to="/" className={`top-nav-link ${location.pathname === '/' ? 'active' : ''}`}>Dashboard</Link>
           <Link to="/marketplace" className={`top-nav-link ${isActive('/marketplace') ? 'active' : ''}`}>Marketplace</Link>
           <Link to="/observability" className={`top-nav-link ${isActive('/observability') ? 'active' : ''}`}>Observability</Link>
+          <Link to="/hosted" className={`top-nav-link ${isActive('/hosted') ? 'active' : ''}`}>Hosted</Link>
 
           <div className={`top-nav-menu ${openMenu === 'build' ? 'open' : ''}`}>
             <button type="button" className="top-nav-link top-nav-menu-trigger" onClick={() => toggleMenu('build')}>
@@ -132,6 +133,13 @@ export default function Sidebar() {
                   <span>
                     <strong>Observability</strong>
                     <small>Runtime events, health checks, and session controls.</small>
+                  </span>
+                </button>
+                <button type="button" className="top-nav-mega-item" onClick={() => navigate('/hosted')}>
+                  <i className="bi bi-hdd-network" />
+                  <span>
+                    <strong>Hosted Catalog</strong>
+                    <small>Browse running hosted servers and install them in one click.</small>
                   </span>
                 </button>
               </div>

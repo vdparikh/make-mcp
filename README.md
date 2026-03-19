@@ -220,7 +220,7 @@ Example hosted manifest:
 - [Getting Started Guide](./docs/getting-started.md) — Full setup and usage guide
 - [Creating Servers](./docs/creating-servers.md) — Detailed guide to building MCP servers
 - [Server Compositions](./docs/compositions.md) — Combining multiple servers into one
-- [Security Best Practices](./docs/security-best-practices.md) — MCP security practices and the in-app security score
+- [Security Best Practices](./docs/security-best-practices.md) — MCP security practices, runtime security model, and the in-app security score
 
 ## Tech Stack
 

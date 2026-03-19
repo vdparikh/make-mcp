@@ -297,7 +297,7 @@ Make MCP computes a **security score** (0–100%, grade A–F) for each server b
 - **While building:** Open your server → **Security** in the left navigation. View the current score, grade, and a list of criteria (e.g. input validation, rate limiting, access control, CLI allowlist, tool hints). Address unmet items to improve the score.
 - **In the marketplace:** Published servers display their security score and grade on the card and in the inspector; the **Security** tab shows which checklist items the server satisfies.
 
-See [Security Best Practices](./security-best-practices.md) for the full mapping of practices to Make MCP features.
+See [Security Best Practices](./security-best-practices.md) for the full mapping of practices to Make MCP features, including the hosted **Runtime Security Model** section.
 
 ### 6. Builder UX: walkthroughs, templates, presets, diff, dry-run
 

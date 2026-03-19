@@ -128,6 +128,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		hostedSessions := api.Group("/hosted")
 		hostedSessions.Use(h.AuthMiddleware())
 		{
+			hostedSessions.GET("/catalog", h.ListHostedCatalog)
 			hostedSessions.GET("/sessions", h.ListHostedSessions)
 			hostedSessions.GET("/sessions/:server_id/health", h.GetHostedSessionHealth)
 			hostedSessions.POST("/sessions/:server_id/restart", h.RestartHostedSession)
@@ -1408,6 +1409,19 @@ type HostedSessionListItem struct {
 	ServerName string `json:"server_name,omitempty"`
 }
 
+type HostedCatalogItem struct {
+	ServerID               string `json:"server_id"`
+	ServerName             string `json:"server_name"`
+	ServerSlug             string `json:"server_slug"`
+	PublisherUserID        string `json:"publisher_user_id"`
+	SnapshotVersion        string `json:"snapshot_version,omitempty"`
+	Endpoint               string `json:"endpoint"`
+	MCPConfig              string `json:"mcp_config"`
+	HostedAuthMode         string `json:"hosted_auth_mode,omitempty"`
+	RequireCallerIdentity  bool   `json:"require_caller_identity"`
+	LastEnsuredAt          string `json:"last_ensured_at,omitempty"`
+}
+
 func normalizeIdleTimeoutMinutes(value *int) (int, error) {
 	if value == nil {
 		return 0, nil
@@ -1784,6 +1798,57 @@ func (h *Handler) buildHostedStatusResponse(c *gin.Context, server *models.Serve
 		HostedAuthMode:        hostedAuthMode,
 		RequireCallerIdentity: server.RequireCallerIdentity,
 	}, nil
+}
+
+// ListHostedCatalog returns all running hosted endpoints that can be installed by users.
+func (h *Handler) ListHostedCatalog(c *gin.Context) {
+	if strings.TrimSpace(h.currentUserID(c)) == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	sessions, err := h.db.ListRunningHostedSessions(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
+	items := make([]HostedCatalogItem, 0, len(sessions))
+	for _, s := range sessions {
+		server, srvErr := h.db.GetServer(c.Request.Context(), s.ServerID)
+		if srvErr != nil || server == nil {
+			continue
+		}
+		slug := database.ServerSlug(server.Name)
+		hostedAccessKey, keyErr := h.db.EnsureServerHostedAccessKey(c.Request.Context(), server.ID)
+		if keyErr != nil {
+			continue
+		}
+		mcpConfigBytes, cfgErr := h.buildHostedMCPConfig(slug, baseURL+"/users/"+s.UserID+"/"+slug, server, hostedAccessKey)
+		if cfgErr != nil {
+			continue
+		}
+		lastEnsuredAt := ""
+		if !s.LastEnsuredAt.IsZero() {
+			lastEnsuredAt = s.LastEnsuredAt.UTC().Format(time.RFC3339)
+		}
+		mode, modeErr := normalizeHostedAuthMode(server.HostedAuthMode)
+		if modeErr != nil {
+			mode = hostedAuthModeNoAuth
+		}
+		items = append(items, HostedCatalogItem{
+			ServerID:              server.ID,
+			ServerName:            server.Name,
+			ServerSlug:            slug,
+			PublisherUserID:       s.UserID,
+			SnapshotVersion:       s.SnapshotVersion,
+			Endpoint:              baseURL + "/users/" + s.UserID + "/" + slug,
+			MCPConfig:             string(mcpConfigBytes),
+			HostedAuthMode:        mode,
+			RequireCallerIdentity: server.RequireCallerIdentity,
+			LastEnsuredAt:         lastEnsuredAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 func (h *Handler) ListHostedSessions(c *gin.Context) {

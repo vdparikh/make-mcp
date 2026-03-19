@@ -1811,6 +1811,39 @@ func (db *DB) ListHostedSessions(ctx context.Context, userID string) ([]models.H
 	return sessions, nil
 }
 
+// ListRunningHostedSessions returns all currently running hosted sessions across users.
+func (db *DB) ListRunningHostedSessions(ctx context.Context) ([]models.HostedSession, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, user_id, server_id, COALESCE(snapshot_version, ''), COALESCE(container_id, ''),
+			COALESCE(host_port, ''), status, health, last_used_at, last_ensured_at, started_at, stopped_at,
+			COALESCE(last_error, ''), created_at, updated_at
+		FROM hosted_sessions
+		WHERE status = 'running'
+		ORDER BY COALESCE(last_used_at, updated_at) DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("listing running hosted sessions: %w", err)
+	}
+	defer rows.Close()
+
+	sessions := make([]models.HostedSession, 0)
+	for rows.Next() {
+		var s models.HostedSession
+		if err := rows.Scan(
+			&s.ID, &s.UserID, &s.ServerID, &s.SnapshotVersion, &s.ContainerID,
+			&s.HostPort, &s.Status, &s.Health, &s.LastUsedAt, &s.LastEnsuredAt, &s.StartedAt,
+			&s.StoppedAt, &s.LastError, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning running hosted session: %w", err)
+		}
+		sessions = append(sessions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating running hosted sessions: %w", err)
+	}
+	return sessions, nil
+}
+
 func (db *DB) GetServerVersions(ctx context.Context, serverID string) ([]models.ServerVersion, error) {
 	rows, err := db.pool.Query(ctx,
 		`SELECT id, server_id, version, COALESCE(release_notes, ''), snapshot, published_by, published_at 

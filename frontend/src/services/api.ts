@@ -702,6 +702,19 @@ export interface HostedSession {
   updated_at: string;
 }
 
+export interface HostedCatalogItem {
+  server_id: string;
+  server_name: string;
+  server_slug: string;
+  publisher_user_id: string;
+  snapshot_version?: string;
+  endpoint: string;
+  mcp_config: string;
+  hosted_auth_mode?: HostedAuthMode;
+  require_caller_identity?: boolean;
+  last_ensured_at?: string;
+}
+
 export const hostedPublish = async (
   serverId: string,
   version?: string,
@@ -728,6 +741,11 @@ export const hostedStatus = async (serverId: string): Promise<HostedStatusRespon
 export const listHostedSessions = async (): Promise<HostedSession[]> => {
   const { data } = await api.get<{ sessions: HostedSession[] }>('/hosted/sessions');
   return data.sessions || [];
+};
+
+export const listHostedCatalog = async (): Promise<HostedCatalogItem[]> => {
+  const { data } = await api.get<{ items: HostedCatalogItem[] }>('/hosted/catalog');
+  return data.items || [];
 };
 
 export const checkHostedSessionHealth = async (serverId: string): Promise<HostedSession> => {
