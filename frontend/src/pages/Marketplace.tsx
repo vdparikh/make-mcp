@@ -161,14 +161,17 @@ export default function Marketplace() {
     <div className="dashboard">
       <div className="page-header">
         <div>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+          <nav className="page-breadcrumb">
+            <Link to="/" className="page-breadcrumb-link">
               Dashboard
             </Link>
-            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>Marketplace</span>
+            <span className="page-breadcrumb-sep">/</span>
+            <span className="page-breadcrumb-current">Marketplace</span>
           </nav>
-          <h1 className="page-title">Marketplace</h1>
+          <h1 className="page-title">
+            <i className="bi bi-shop page-title-icon"></i>
+            Marketplace
+          </h1>
           <p className="page-subtitle">
             Browse, inspect, and deploy published MCP servers from the community
           </p>
@@ -204,6 +207,40 @@ export default function Marketplace() {
                 <option value="downloads_desc">Most downloaded</option>
                 <option value="name_asc">Name (A-Z)</option>
               </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && filteredServers.length > 0 && (
+        <div className="card marketplace-spotlight-card">
+          <div className="marketplace-spotlight-content">
+            <div className="marketplace-spotlight-kicker">Featured this week</div>
+            <h3 className="marketplace-spotlight-title">{filteredServers[0].name}</h3>
+            <p className="marketplace-spotlight-desc">{filteredServers[0].description || 'Community published MCP server ready to inspect and deploy.'}</p>
+            <div className="marketplace-spotlight-actions">
+              <button className="btn btn-secondary" onClick={() => handleViewServer(filteredServers[0])}>
+                <i className="bi bi-eye"></i>
+                Inspect
+              </button>
+              <button className="btn btn-primary" onClick={() => openDeploy(filteredServers[0])}>
+                <i className="bi bi-cloud-arrow-up"></i>
+                Deploy now
+              </button>
+            </div>
+          </div>
+          <div className="marketplace-spotlight-meta">
+            <div>
+              <strong>{filteredServers[0].tools?.length || 0}</strong>
+              <span>Tools</span>
+            </div>
+            <div>
+              <strong>{filteredServers[0].downloads || 0}</strong>
+              <span>Downloads</span>
+            </div>
+            <div>
+              <strong>v{filteredServers[0].latest_version || filteredServers[0].version}</strong>
+              <span>Version</span>
             </div>
           </div>
         </div>

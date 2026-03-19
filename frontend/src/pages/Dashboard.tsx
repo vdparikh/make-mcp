@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import type { Server, ServerComposition } from '../types';
@@ -30,6 +30,8 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published' | 'archived' | 'hosted_running'>('all');
   const [sortBy, setSortBy] = useState<'updated_desc' | 'name_asc' | 'tools_desc'>('updated_desc');
   const [hostedRuntimeByServer, setHostedRuntimeByServer] = useState<Record<string, { running: boolean; health?: string }>>({});
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const templateMenuRef = useRef<HTMLDivElement | null>(null);
 
   const mapHostedRuntimeFromServers = (items: Server[]): Record<string, { running: boolean; health?: string }> => {
     const next: Record<string, { running: boolean; health?: string }> = {};
@@ -195,17 +197,98 @@ export default function Dashboard() {
     return items;
   }, [servers, hostedRuntimeByServer, searchQuery, sortBy, statusFilter]);
 
+  const newestServer = useMemo(() => {
+    if (!servers.length) return null;
+    return [...servers].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
+  }, [servers]);
+
+  const publishedCount = servers.filter((s) => s.status === 'published').length;
+  const hostedCount = servers.filter((s) => hostedRuntimeByServer[s.id]?.running).length;
+
+  useEffect(() => {
+    if (!templateMenuOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!templateMenuRef.current) return;
+      if (!templateMenuRef.current.contains(event.target as Node)) {
+        setTemplateMenuOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTemplateMenuOpen(false);
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [templateMenuOpen]);
+
+  const renderPrimaryActions = (className = 'dashboard-action-row') => (
+    <div className={className}>
+      <button type="button" className="btn btn-primary dashboard-action-btn" onClick={() => setShowCreateModal(true)}>
+        <i className="bi bi-plus-lg"></i>
+        New Server
+      </button>
+      <div className="dashboard-template-dropdown" ref={templateMenuRef}>
+        <button
+          type="button"
+          className="btn btn-secondary dashboard-action-btn"
+          onClick={() => setTemplateMenuOpen((prev) => !prev)}
+          aria-haspopup="menu"
+          aria-expanded={templateMenuOpen}
+        >
+          <i className="bi bi-box-seam"></i>
+          Start with Template
+          <i className="bi bi-chevron-down dashboard-template-caret"></i>
+        </button>
+        {templateMenuOpen && (
+          <div className="dashboard-template-menu" role="menu">
+            <button
+              type="button"
+              className="dashboard-template-menu-item"
+              onClick={() => {
+                setTemplateMenuOpen(false);
+                handleCreateDemoServer();
+              }}
+            >
+              <i className="bi bi-box-seam"></i>
+              Demo Template
+            </button>
+            <button
+              type="button"
+              className="dashboard-template-menu-item"
+              onClick={() => {
+                setTemplateMenuOpen(false);
+                handleCreateRestStarterServer();
+              }}
+            >
+              <i className="bi bi-globe"></i>
+              REST Template
+            </button>
+          </div>
+        )}
+      </div>
+      <button type="button" className="btn btn-outline-primary dashboard-action-btn" onClick={() => navigate('/import/openapi')}>
+        <i className="bi bi-file-earmark-code"></i>
+        Import OpenAPI
+      </button>
+    </div>
+  );
+
   return (
     <div>
       <div className="page-header" style={{ alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>
-              <i className="bi bi-house-door" style={{ marginRight: '0.375rem' }}></i>
-              Dashboard
-            </span>
+          <nav className="page-breadcrumb">
+            <span className="page-breadcrumb-current">Dashboard</span>
           </nav>
-          <h1 className="page-title">MCP Servers</h1>
+          <h1 className="page-title">
+            <i className="bi bi-server page-title-icon"></i>
+            MCP Servers
+          </h1>
           <p className="page-subtitle">Create and manage your Model Context Protocol servers</p>
           {/* Tabs integrated under subtitle */}
           <div
@@ -271,32 +354,39 @@ export default function Dashboard() {
 
       {activeTab === 'servers' && (
         <>
-      <div className="card dashboard-quick-actions-card dashboard-quick-actions-featured">
-        <div className="dashboard-quick-actions-head">
+      <div className="card dashboard-command-center">
+        <div className="dashboard-command-center-head">
           <div>
-            <h3 className="card-title" style={{ margin: 0 }}>Quick start</h3>
-            <p className="dashboard-quick-actions-subtitle">Create from scratch, use templates, or import OpenAPI in one place.</p>
+            <h3 className="card-title" style={{ margin: 0 }}>Workspace command center</h3>
+            <p className="dashboard-command-center-subtitle">
+              Build faster with one-click starter actions and jump back into your latest server.
+            </p>
+          </div>
+          <div className="dashboard-command-center-pills">
+            <span className="dashboard-cc-pill">{servers.length} total</span>
+            <span className="dashboard-cc-pill">{publishedCount} published</span>
+            <span className="dashboard-cc-pill">{hostedCount} hosted live</span>
           </div>
         </div>
-        <div className="dashboard-quick-actions-grid">
-          <button type="button" className="btn btn-primary dashboard-quick-action-btn" onClick={() => setShowCreateModal(true)}>
-            <i className="bi bi-plus-lg"></i>
-            New Server
-          </button>
-          <button type="button" className="btn btn-secondary dashboard-quick-action-btn" onClick={handleCreateDemoServer}>
-            <i className="bi bi-box-seam"></i>
-            Use Demo Template
-          </button>
-          <button type="button" className="btn btn-secondary dashboard-quick-action-btn" onClick={handleCreateRestStarterServer}>
-            <i className="bi bi-globe"></i>
-            Use REST Template
-          </button>
-          <button type="button" className="btn btn-outline-primary dashboard-quick-action-btn" onClick={() => navigate('/import/openapi')}>
-            <i className="bi bi-file-earmark-code"></i>
-            Import OpenAPI
-          </button>
-        </div>
+        {newestServer && (
+          <div className="dashboard-command-center-latest">
+            <div>
+              <div className="dashboard-command-center-label">Continue where you left off</div>
+              <div className="dashboard-command-center-name">{newestServer.name}</div>
+            </div>
+            <Link to={`/servers/${newestServer.id}`} className="btn btn-secondary btn-sm">
+              <i className="bi bi-arrow-right-circle"></i>
+              Open latest
+            </Link>
+          </div>
+        )}
       </div>
+
+      {!loading && servers.length > 0 && (
+        <div className="card dashboard-primary-actions-card">
+          {renderPrimaryActions()}
+        </div>
+      )}
 
       <div className="dashboard-kpi-strip" role="status" aria-label="Server metrics">
         <div className="dashboard-kpi-item">
@@ -359,17 +449,8 @@ export default function Dashboard() {
         <div className="empty-state">
           <i className="bi bi-server"></i>
           <h3>No servers yet</h3>
-          <p>Create your first MCP server to get started, or add the demo server to explore the system.</p>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-              <i className="bi bi-plus-lg"></i>
-              Create Server
-            </button>
-            <button className="btn btn-secondary" onClick={handleCreateDemoServer}>
-              <i className="bi bi-box-seam"></i>
-              Create demo server
-            </button>
-          </div>
+          <p>Create your first MCP server, start from a template, or import from OpenAPI.</p>
+          {renderPrimaryActions('dashboard-action-row dashboard-action-row-center')}
         </div>
       ) : filteredServers.length === 0 ? (
         <div className="empty-state">

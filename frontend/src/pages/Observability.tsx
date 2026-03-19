@@ -119,17 +119,17 @@ export default function Observability() {
 
   return (
     <div>
-      <nav style={{ marginBottom: '0.5rem' }}>
-        <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+      <nav className="page-breadcrumb">
+        <Link to="/" className="page-breadcrumb-link">
           Dashboard
         </Link>
-        <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-        <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>Observability</span>
+        <span className="page-breadcrumb-sep">/</span>
+        <span className="page-breadcrumb-current">Observability</span>
       </nav>
       <div className="page-header" style={{ marginBottom: '1.5rem' }}>
         <div>
           <h1 className="page-title">
-            <i className="bi bi-graph-up" style={{ marginRight: '0.5rem' }}></i>
+            <i className="bi bi-graph-up page-title-icon"></i>
             Observability
           </h1>
           <p className="page-subtitle">
@@ -229,137 +229,139 @@ export default function Observability() {
       )}
 
       {data && !loading && (
-        <>
-          {events.length > 0 && (
-            <div className="card" style={{ marginBottom: '1.5rem' }}>
-              <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-                <i className="bi bi-list-ul" style={{ marginRight: '0.5rem' }}></i>
-                Recent tool calls
-              </h4>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Server</th>
-                      <th>Tool</th>
-                      <th>User / Tenant</th>
-                      <th>Client (Agent)</th>
-                      <th>Time</th>
-                      <th>Latency</th>
-                      <th>Status</th>
-                      <th>Error / Suggestion</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {events.slice(0, 100).map((e: ToolExecution) => (
-                      <tr key={e.id}>
-                        <td>
-                          <Link to={`/servers/${e.server_id}`} style={{ color: 'var(--primary-color)' }}>
-                            {serverName(e.server_id)}
-                          </Link>
-                        </td>
-                        <td>{e.tool_name || e.tool_id}</td>
-                        <td style={{ fontSize: '0.85rem' }}>{e.client_user_id || '—'}</td>
-                        <td style={{ fontSize: '0.85rem' }}>{e.client_agent || '—'}</td>
-                        <td>{new Date(e.created_at).toLocaleString()}</td>
-                        <td>{e.duration_ms} ms</td>
-                        <td>
-                          {e.success ? (
-                            <span className="observability-status ok"><i className="bi bi-check-circle" /> OK</span>
-                          ) : (
-                            <span className="observability-status failed"><i className="bi bi-x-circle" /> Failed</span>
-                          )}
-                        </td>
-                        <td style={{ fontSize: '0.85rem' }}>
-                          {e.error && <span style={{ color: 'var(--danger-color)' }}>{e.error}</span>}
-                          {e.repair_suggestion && (
-                            <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
-                              <i className="bi bi-lightbulb" /> {e.repair_suggestion}
-                            </div>
-                          )}
-                        </td>
+        <div className="observability-layout">
+          <div className="observability-main">
+            {events.length > 0 && (
+              <div className="card observability-main-card" style={{ marginBottom: '1.5rem' }}>
+                <div className="observability-main-card-head">
+                  <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+                    <i className="bi bi-list-ul" style={{ marginRight: '0.5rem' }}></i>
+                    Recent tool calls
+                  </h4>
+                  <span className="observability-row-count">{events.length} events</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Server</th>
+                        <th>Tool</th>
+                        <th>User / Tenant</th>
+                        <th>Client (Agent)</th>
+                        <th>Time</th>
+                        <th>Latency</th>
+                        <th>Status</th>
+                        <th>Error / Suggestion</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {(data.latency_by_tool?.length > 0 || data.failures_by_tool?.length > 0) && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-              {data.latency_by_tool?.length > 0 && (
-                <div className="card">
-                  <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-                    <i className="bi bi-speedometer2" style={{ marginRight: '0.5rem' }}></i>
-                    Latency by tool
-                  </h4>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                    {data.latency_by_tool.map((s) => (
-                      <li key={s.tool_id || s.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
-                        <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {s.count} calls · avg {Math.round(s.avg_ms)} ms · max {s.p95_ms} ms
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                    </thead>
+                    <tbody>
+                      {events.slice(0, 100).map((e: ToolExecution) => (
+                        <tr key={e.id}>
+                          <td>
+                            <Link to={`/servers/${e.server_id}`} style={{ color: 'var(--primary-color)' }}>
+                              {serverName(e.server_id)}
+                            </Link>
+                          </td>
+                          <td>{e.tool_name || e.tool_id}</td>
+                          <td style={{ fontSize: '0.85rem' }}>{e.client_user_id || '—'}</td>
+                          <td style={{ fontSize: '0.85rem' }}>{e.client_agent || '—'}</td>
+                          <td>{new Date(e.created_at).toLocaleString()}</td>
+                          <td>{e.duration_ms} ms</td>
+                          <td>
+                            {e.success ? (
+                              <span className="observability-status ok"><i className="bi bi-check-circle" /> OK</span>
+                            ) : (
+                              <span className="observability-status failed"><i className="bi bi-x-circle" /> Failed</span>
+                            )}
+                          </td>
+                          <td style={{ fontSize: '0.85rem' }}>
+                            {e.error && <span style={{ color: 'var(--danger-color)' }}>{e.error}</span>}
+                            {e.repair_suggestion && (
+                              <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                                <i className="bi bi-lightbulb" /> {e.repair_suggestion}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-              {data.failures_by_tool?.length > 0 && (
-                <div className="card">
-                  <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-                    <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.5rem' }}></i>
-                    Failures by tool
-                  </h4>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                    {data.failures_by_tool.map((f) => (
-                      <li key={f.tool_id || f.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
-                        <div style={{ fontWeight: 500 }}>{f.tool_name || f.tool_id}</div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--danger)' }}>{f.count} failure(s)</div>
-                        {f.last_error && (
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{f.last_error}</div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-
-          {data.repair_suggestions?.length > 0 && (
-            <div className="card observability-sessions-modal-card">
-              <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
-                <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem' }}></i>
-                Repair suggestions
-              </h4>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {data.repair_suggestions.map((s, i) => (
-                  <li key={i} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)' }}>
-                    <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
-                    <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{s.suggestion}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                      {new Date(s.created_at).toLocaleString()}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {events.length === 0 && !loading && (
-            <div className="card">
-              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                <i className="bi bi-graph-up" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}></i>
-                <p>No runtime events yet. Enable observability reporting in a server’s Observability tab and set the env vars in your deployed MCP server.</p>
-                <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
-                  <Link to="/" style={{ color: 'var(--primary-color)' }}>Go to Dashboard</Link> to open a server and enable reporting.
-                </p>
               </div>
-            </div>
-          )}
-        </>
+            )}
+
+            {events.length === 0 && !loading && (
+              <div className="card">
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  <i className="bi bi-graph-up" style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}></i>
+                  <p>No runtime events yet. Enable observability reporting in a server’s Observability tab and set the env vars in your deployed MCP server.</p>
+                  <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                    <Link to="/" style={{ color: 'var(--primary-color)' }}>Go to Dashboard</Link> to open a server and enable reporting.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <aside className="observability-side">
+            {data.latency_by_tool?.length > 0 && (
+              <div className="card observability-side-card">
+                <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+                  <i className="bi bi-speedometer2" style={{ marginRight: '0.5rem' }}></i>
+                  Latency by tool
+                </h4>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {data.latency_by_tool.map((s) => (
+                    <li key={s.tool_id || s.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
+                      <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        {s.count} calls · avg {Math.round(s.avg_ms)} ms · max {s.p95_ms} ms
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {data.failures_by_tool?.length > 0 && (
+              <div className="card observability-side-card">
+                <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+                  <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.5rem' }}></i>
+                  Failures by tool
+                </h4>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {data.failures_by_tool.map((f) => (
+                    <li key={f.tool_id || f.tool_name} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)' }}>
+                      <div style={{ fontWeight: 500 }}>{f.tool_name || f.tool_id}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--danger)' }}>{f.count} failure(s)</div>
+                      {f.last_error && (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{f.last_error}</div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {data.repair_suggestions?.length > 0 && (
+              <div className="card observability-side-card observability-sessions-modal-card">
+                <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
+                  <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem' }}></i>
+                  Repair suggestions
+                </h4>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {data.repair_suggestions.map((s, i) => (
+                    <li key={i} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)' }}>
+                      <div style={{ fontWeight: 500 }}>{s.tool_name || s.tool_id}</div>
+                      <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{s.suggestion}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        {new Date(s.created_at).toLocaleString()}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </aside>
+        </div>
       )}
 
       {showSessionsModal && (
