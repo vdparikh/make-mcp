@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Server, ServerVersion, Tool, Resource, Prompt, SecurityScoreResult } from '../types';
-import { listMarketplace, getMarketplaceServer, downloadMarketplaceServer, marketplaceHostedDeploy, marketplaceHostedStatus } from '../services/api';
-import DeployOptionsModal from '../components/DeployOptionsModal';
+import { listMarketplace, getMarketplaceServer } from '../services/api';
 import { useTryChat } from '../contexts/TryChatContext';
 
 type InspectorTab = 'tools' | 'resources' | 'prompts' | 'versions' | 'security';
@@ -14,9 +13,6 @@ export default function Marketplace() {
   const [versions, setVersions] = useState<ServerVersion[]>([]);
   const [securityScore, setSecurityScore] = useState<SecurityScoreResult | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [showDeployModal, setShowDeployModal] = useState(false);
-  const [deployServer, setDeployServer] = useState<Server | null>(null);
-  const [downloading, setDownloading] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('tools');
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
@@ -57,30 +53,8 @@ export default function Marketplace() {
     }
   };
 
-  const serverSlug = (name: string) => name.replace(/\s+/g, '-').toLowerCase().replace(/[^a-z0-9-]/g, '');
-
-  const handleDownload = async (serverId: string, serverName: string) => {
-    setDownloading(true);
-    try {
-      const blob = await downloadMarketplaceServer(serverId);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${serverSlug(serverName)}-mcp-server.zip`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('Error downloading:', error);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   const openDeploy = (server: Server) => {
-    setDeployServer(server);
-    setShowDeployModal(true);
+    navigate(`/deploy?target=marketplace&id=${encodeURIComponent(server.id)}`);
   };
 
   const formatDate = (dateString: string) => {
@@ -161,14 +135,17 @@ export default function Marketplace() {
     <div className="dashboard">
       <div className="page-header">
         <div>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+          <nav className="page-breadcrumb">
+            <Link to="/" className="page-breadcrumb-link">
               Dashboard
             </Link>
-            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>Marketplace</span>
+            <span className="page-breadcrumb-sep">/</span>
+            <span className="page-breadcrumb-current">Marketplace</span>
           </nav>
-          <h1 className="page-title">Marketplace</h1>
+          <h1 className="page-title">
+            <i className="bi bi-shop page-title-icon"></i>
+            Marketplace
+          </h1>
           <p className="page-subtitle">
             Browse, inspect, and deploy published MCP servers from the community
           </p>
@@ -204,6 +181,40 @@ export default function Marketplace() {
                 <option value="downloads_desc">Most downloaded</option>
                 <option value="name_asc">Name (A-Z)</option>
               </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && filteredServers.length > 0 && (
+        <div className="card marketplace-spotlight-card">
+          <div className="marketplace-spotlight-content">
+            <div className="marketplace-spotlight-kicker">Featured this week</div>
+            <h3 className="marketplace-spotlight-title">{filteredServers[0].name}</h3>
+            <p className="marketplace-spotlight-desc">{filteredServers[0].description || 'Community published MCP server ready to inspect and deploy.'}</p>
+            <div className="marketplace-spotlight-actions">
+              <button className="btn btn-secondary" onClick={() => handleViewServer(filteredServers[0])}>
+                <i className="bi bi-eye"></i>
+                Inspect
+              </button>
+              <button className="btn btn-primary" onClick={() => openDeploy(filteredServers[0])}>
+                <i className="bi bi-cloud-arrow-up"></i>
+                Deploy now
+              </button>
+            </div>
+          </div>
+          <div className="marketplace-spotlight-meta">
+            <div>
+              <strong>{filteredServers[0].tools?.length || 0}</strong>
+              <span>Tools</span>
+            </div>
+            <div>
+              <strong>{filteredServers[0].downloads || 0}</strong>
+              <span>Downloads</span>
+            </div>
+            <div>
+              <strong>v{filteredServers[0].latest_version || filteredServers[0].version}</strong>
+              <span>Version</span>
             </div>
           </div>
         </div>
@@ -985,18 +996,6 @@ export default function Marketplace() {
           </div>
         </div>
       )}
-      <DeployOptionsModal
-        open={showDeployModal && !!deployServer}
-        title={deployServer?.name || 'Marketplace Server'}
-        artifactLabel="marketplace server"
-        downloading={downloading}
-        onClose={() => setShowDeployModal(false)}
-        onDownloadZip={() => handleDownload(deployServer!.id, deployServer!.name)}
-        onHostedPublish={deployServer ? async () => {
-          return marketplaceHostedDeploy(deployServer.id);
-        } : undefined}
-        onHostedStatus={deployServer ? async () => marketplaceHostedStatus(deployServer.id) : undefined}
-      />
     </div>
   );
 }

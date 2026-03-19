@@ -133,29 +133,25 @@ export default function Docs() {
       <div>
         <div className="page-header">
           <div>
-            <nav style={{ marginBottom: '0.5rem' }}>
-              <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+            <nav className="page-breadcrumb">
+              <Link to="/" className="page-breadcrumb-link">
                 Dashboard
               </Link>
-              <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
+              <span className="page-breadcrumb-sep">/</span>
               <button
                 type="button"
                 onClick={() => setSelectedDoc(null)}
-                style={{
-                  color: 'var(--text-muted)',
-                  textDecoration: 'none',
-                  fontSize: '0.875rem',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
+                className="page-breadcrumb-link page-breadcrumb-link-button"
               >
                 Documentation
               </button>
-              <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-              <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>{docMeta?.title}</span>
+              <span className="page-breadcrumb-sep">/</span>
+              <span className="page-breadcrumb-current">{docMeta?.title}</span>
             </nav>
-            <h1 className="page-title">Documentation</h1>
+            <h1 className="page-title">
+              <i className="bi bi-book page-title-icon"></i>
+              Documentation
+            </h1>
           </div>
           <button type="button" className="btn btn-secondary" onClick={() => setSelectedDoc(null)}>
             <i className="bi bi-arrow-left"></i>
@@ -314,14 +310,17 @@ export default function Docs() {
     <div>
       <div className="page-header">
         <div>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+          <nav className="page-breadcrumb">
+            <Link to="/" className="page-breadcrumb-link">
               Dashboard
             </Link>
-            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>Documentation</span>
+            <span className="page-breadcrumb-sep">/</span>
+            <span className="page-breadcrumb-current">Documentation</span>
           </nav>
-          <h1 className="page-title">Documentation</h1>
+          <h1 className="page-title">
+            <i className="bi bi-book page-title-icon"></i>
+            Documentation
+          </h1>
           <p className="page-subtitle">Learn how to build and deploy MCP servers</p>
         </div>
         <Link to="/" className="btn btn-secondary">

@@ -31,9 +31,9 @@ func (g *Generator) initTemplates() {
 			b, _ := json.MarshalIndent(v, "", "  ")
 			return string(b)
 		},
-		"toCamelCase": toCamelCase,
+		"toCamelCase":  toCamelCase,
 		"toPascalCase": toPascalCase,
-		"toSnakeCase": toSnakeCase,
+		"toSnakeCase":  toSnakeCase,
 	}
 
 	g.templates["server"] = template.Must(template.New("server").Funcs(funcMap).Parse(serverTemplate))
@@ -79,6 +79,7 @@ func (g *Generator) Generate(server *models.Server) (*GeneratedServer, error) {
 	gen.Files["package.json"] = packageJSON
 
 	gen.Files["tsconfig.json"] = []byte(tsconfigContent)
+	gen.Files["src/types/mcp-sdk.d.ts"] = []byte(mcpSDKDeclarationsContent)
 
 	gen.Files["Dockerfile"] = []byte(dockerfileContent)
 
@@ -189,7 +190,7 @@ func (g *Generator) BuildCompositionServer(composition *models.ServerComposition
 	for _, server := range servers {
 		for _, tool := range server.Tools {
 			originalName := tool.Name
-			
+
 			// Apply prefix if enabled or if there's a conflict
 			if options.PrefixToolNames {
 				tool.Name = toSnakeCase(server.Name) + "_" + tool.Name
@@ -207,12 +208,12 @@ func (g *Generator) BuildCompositionServer(composition *models.ServerComposition
 			}
 
 			toolNames[tool.Name] = server.Name
-			
+
 			// Update description to show source
 			if tool.Description != "" {
 				tool.Description = fmt.Sprintf("[%s] %s", server.Name, tool.Description)
 			}
-			
+
 			combined.Tools = append(combined.Tools, tool)
 		}
 
@@ -352,34 +353,34 @@ func (g *Generator) generateServerFile(server *models.Server) ([]byte, error) {
 
 func (g *Generator) generateToolFile(tool *models.Tool) ([]byte, error) {
 	var buf bytes.Buffer
-	
+
 	data := struct {
 		*models.Tool
-		InputSchemaStr  string
-		OutputSchemaStr string
+		InputSchemaStr     string
+		OutputSchemaStr    string
 		ExecutionConfigStr string
 	}{
 		Tool: tool,
 	}
-	
+
 	if tool.InputSchema != nil {
 		data.InputSchemaStr = string(tool.InputSchema)
 	} else {
 		data.InputSchemaStr = "{}"
 	}
-	
+
 	if tool.OutputSchema != nil {
 		data.OutputSchemaStr = string(tool.OutputSchema)
 	} else {
 		data.OutputSchemaStr = "{}"
 	}
-	
+
 	if tool.ExecutionConfig != nil {
 		data.ExecutionConfigStr = string(tool.ExecutionConfig)
 	} else {
 		data.ExecutionConfigStr = "{}"
 	}
-	
+
 	if err := g.templates["tool"].Execute(&buf, data); err != nil {
 		return nil, err
 	}
@@ -388,11 +389,11 @@ func (g *Generator) generateToolFile(tool *models.Tool) ([]byte, error) {
 
 func (g *Generator) generateToolsIndex(tools []models.Tool) []byte {
 	var buf bytes.Buffer
-	
+
 	for _, tool := range tools {
 		buf.WriteString(fmt.Sprintf("export { %s } from './%s.js';\n", toPascalCase(tool.Name), toSnakeCase(tool.Name)))
 	}
-	
+
 	return buf.Bytes()
 }
 
@@ -414,7 +415,7 @@ func (g *Generator) generateReadme(server *models.Server) ([]byte, error) {
 
 func (g *Generator) generateDockerCompose(server *models.Server) ([]byte, error) {
 	serverSlug := toSnakeCase(server.Name)
-	
+
 	compose := fmt.Sprintf(`version: '3.8'
 
 services:
@@ -442,7 +443,7 @@ services:
 # volumes:
 #   data:
 `, serverSlug, serverSlug)
-	
+
 	return []byte(compose), nil
 }
 
@@ -453,7 +454,7 @@ func (g *Generator) generateEnvExample(server *models.Server) ([]byte, error) {
 	envVars = append(envVars, "")
 	envVars = append(envVars, "NODE_ENV=production")
 	envVars = append(envVars, "")
-	
+
 	// Extract env vars from tool configs
 	envSet := make(map[string]bool)
 	for _, tool := range server.Tools {
@@ -461,12 +462,12 @@ func (g *Generator) generateEnvExample(server *models.Server) ([]byte, error) {
 		if err := json.Unmarshal(tool.ExecutionConfig, &config); err != nil {
 			continue
 		}
-		
+
 		// Look for {{VAR}} patterns in the config
 		configStr := string(tool.ExecutionConfig)
 		extractEnvVars(configStr, envSet)
 	}
-	
+
 	// Add common env vars based on auth patterns
 	if len(envSet) > 0 {
 		envVars = append(envVars, "# API Keys and Secrets")
@@ -474,13 +475,13 @@ func (g *Generator) generateEnvExample(server *models.Server) ([]byte, error) {
 			envVars = append(envVars, env+"=")
 		}
 	}
-	
+
 	envVars = append(envVars, "")
 	envVars = append(envVars, "# Optional: CLI tool paths (for CLI execution type)")
 	envVars = append(envVars, "# KUBECONFIG=/path/to/kubeconfig")
 	envVars = append(envVars, "# AWS_PROFILE=default")
 	envVars = append(envVars, "# DOCKER_HOST=unix:///var/run/docker.sock")
-	
+
 	return []byte(strings.Join(envVars, "\n")), nil
 }
 
@@ -498,7 +499,7 @@ func extractEnvVars(s string, envSet map[string]bool) {
 			break
 		}
 		end += idx
-		
+
 		varName := s[idx+2 : end]
 		// Check if it looks like an env var (all caps with underscores)
 		if isEnvVarName(varName) {
@@ -694,7 +695,17 @@ const server = new Server(
   }
 );
 
-const tools = [
+type GeneratedTool = {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  outputDisplay?: string;
+  execute: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+};
+
+const tools: GeneratedTool[] = [
 {{range .Tools}}  {{toPascalCase .Name}},
 {{end}}];
 
@@ -798,7 +809,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
+  const { name, arguments: args } = (request as { params: { name: string; arguments?: unknown } }).params;
   return executeToolCall(name, (args || {}) as Record<string, unknown>);
 });
 
@@ -1382,6 +1393,23 @@ const tsconfigContent = `{
   "exclude": ["node_modules", "dist"]
 }
 `
+
+const mcpSDKDeclarationsContent = `declare module "@modelcontextprotocol/sdk/server/index.js" {
+  export class Server {
+    constructor(serverInfo: { name: string; version: string }, options: { capabilities?: { tools?: Record<string, unknown> } });
+    setRequestHandler(schema: unknown, handler: (request: unknown) => Promise<unknown> | unknown): void;
+    connect(transport: unknown): Promise<void>;
+  }
+}
+
+declare module "@modelcontextprotocol/sdk/server/stdio.js" {
+  export class StdioServerTransport {}
+}
+
+declare module "@modelcontextprotocol/sdk/types.js" {
+  export const CallToolRequestSchema: unknown;
+  export const ListToolsRequestSchema: unknown;
+}`
 
 const tsconfigTemplate = tsconfigContent
 

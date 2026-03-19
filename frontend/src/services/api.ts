@@ -383,6 +383,7 @@ export interface CompositionExportOptions {
   prefix_tool_names: boolean;
   merge_resources: boolean;
   merge_prompts: boolean;
+  env_profile?: EnvProfileKey;
 }
 
 export const exportComposition = async (id: string, options: CompositionExportOptions): Promise<Blob> => {
@@ -626,6 +627,13 @@ export interface HostedStatusResponse {
   manifest?: Record<string, unknown>;
   container_id?: string;
   host_port?: string;
+  runtime?: string;
+  image?: string;
+  memory_mb?: number;
+  nano_cpus?: number;
+  pids_limit?: number;
+  idle_timeout_minutes?: number;
+  network_scope?: string;
 }
 
 export interface TryProviderInfo {
@@ -690,8 +698,17 @@ export interface HostedSession {
   updated_at: string;
 }
 
-export const hostedPublish = async (serverId: string, version?: string): Promise<HostedPublishResponse> => {
-  const { data } = await api.post<HostedPublishResponse>(`/servers/${serverId}/hosted-publish`, { version: version || '' });
+export const hostedPublish = async (
+  serverId: string,
+  version?: string,
+  envProfile?: EnvProfileKey,
+  idleTimeoutMinutes?: number
+): Promise<HostedPublishResponse> => {
+  const { data } = await api.post<HostedPublishResponse>(`/servers/${serverId}/hosted-publish`, {
+    version: version || '',
+    env_profile: envProfile || undefined,
+    idle_timeout_minutes: idleTimeoutMinutes,
+  });
   return data;
 };
 
@@ -720,8 +737,15 @@ export const stopHostedSession = async (serverId: string): Promise<HostedSession
   return data;
 };
 
-export const marketplaceHostedDeploy = async (serverId: string): Promise<HostedStatusResponse> => {
-  const { data } = await api.post<HostedStatusResponse>(`/marketplace/${serverId}/hosted-deploy`);
+export const marketplaceHostedDeploy = async (
+  serverId: string,
+  envProfile?: EnvProfileKey,
+  idleTimeoutMinutes?: number
+): Promise<HostedStatusResponse> => {
+  const { data } = await api.post<HostedStatusResponse>(`/marketplace/${serverId}/hosted-deploy`, {
+    env_profile: envProfile || undefined,
+    idle_timeout_minutes: idleTimeoutMinutes,
+  });
   return data;
 };
 
@@ -730,8 +754,15 @@ export const marketplaceHostedStatus = async (serverId: string): Promise<HostedS
   return data;
 };
 
-export const compositionHostedDeploy = async (compositionId: string): Promise<HostedStatusResponse> => {
-  const { data } = await api.post<HostedStatusResponse>(`/compositions/${compositionId}/hosted-deploy`);
+export const compositionHostedDeploy = async (
+  compositionId: string,
+  envProfile?: EnvProfileKey,
+  idleTimeoutMinutes?: number
+): Promise<HostedStatusResponse> => {
+  const { data } = await api.post<HostedStatusResponse>(`/compositions/${compositionId}/hosted-deploy`, {
+    env_profile: envProfile || undefined,
+    idle_timeout_minutes: idleTimeoutMinutes,
+  });
   return data;
 };
 
@@ -772,8 +803,9 @@ export const getMarketplaceServer = async (id: string): Promise<{
   return data;
 };
 
-export const downloadMarketplaceServer = async (id: string): Promise<Blob> => {
+export const downloadMarketplaceServer = async (id: string, envProfile?: EnvProfileKey): Promise<Blob> => {
   const { data } = await api.get<Blob>(`/marketplace/${id}/download`, {
+    params: envProfile ? { env_profile: envProfile } : undefined,
     responseType: 'blob',
   });
   return data;

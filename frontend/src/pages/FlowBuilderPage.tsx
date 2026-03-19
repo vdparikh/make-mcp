@@ -52,7 +52,7 @@ export default function FlowBuilderPage() {
         <div className="page-header">
           <div>
             <h1 className="page-title">
-              <i className="bi bi-diagram-3" style={{ marginRight: '0.75rem', color: 'var(--primary-color)' }}></i>
+              <i className="bi bi-diagram-3 page-title-icon"></i>
               Visual Flow Builder
             </h1>
           </div>
@@ -242,23 +242,23 @@ export default function FlowBuilderPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+          <nav className="page-breadcrumb">
+            <Link to="/" className="page-breadcrumb-link">
               Dashboard
             </Link>
-            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
+            <span className="page-breadcrumb-sep">/</span>
             {serverId && (
               <>
-                <Link to={`/servers/${serverId}`} style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+                <Link to={`/servers/${serverId}`} className="page-breadcrumb-link">
                   Server
                 </Link>
-                <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
+                <span className="page-breadcrumb-sep">/</span>
               </>
             )}
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>Flow Builder</span>
+            <span className="page-breadcrumb-current">Flow Builder</span>
           </nav>
           <h1 className="page-title">
-            <i className="bi bi-diagram-3" style={{ marginRight: '0.75rem', color: 'var(--primary-color)' }}></i>
+            <i className="bi bi-diagram-3 page-title-icon"></i>
             Visual Flow Builder
           </h1>
           <p className="page-subtitle">

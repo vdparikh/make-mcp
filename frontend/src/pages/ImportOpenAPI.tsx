@@ -164,15 +164,15 @@ export default function ImportOpenAPI() {
     <div className="page">
       <div className="page-header">
         <div>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+          <nav className="page-breadcrumb">
+            <Link to="/" className="page-breadcrumb-link">
               Dashboard
             </Link>
-            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>Import OpenAPI</span>
+            <span className="page-breadcrumb-sep">/</span>
+            <span className="page-breadcrumb-current">Import OpenAPI</span>
           </nav>
           <h1 className="page-title">
-            <i className="bi bi-file-earmark-code" style={{ marginRight: '0.75rem' }}></i>
+            <i className="bi bi-file-earmark-code page-title-icon"></i>
             Import from OpenAPI
           </h1>
           <p className="page-subtitle">

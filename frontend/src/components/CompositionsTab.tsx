@@ -1,16 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import type { Server, ServerComposition } from '../types';
-import DeployOptionsModal from './DeployOptionsModal';
 import { useTryChat } from '../contexts/TryChatContext';
 import ConfirmModal from './ConfirmModal';
 import {
   createComposition,
   updateComposition,
   deleteComposition,
-  compositionHostedDeploy,
-  compositionHostedStatus,
-  exportComposition,
 } from '../services/api';
 
 interface CompositionsTabProps {
@@ -31,6 +28,7 @@ export default function CompositionsTab({
   openFormRequested,
   onFormOpened,
 }: CompositionsTabProps) {
+  const navigate = useNavigate();
   const { openTryChat } = useTryChat();
   const [showFormModal, setShowFormModal] = useState(false);
   useEffect(() => {
@@ -46,10 +44,6 @@ export default function CompositionsTab({
   const [selectedServers, setSelectedServers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [deleteCompositionId, setDeleteCompositionId] = useState<string | null>(null);
-
-  const [showDeployModal, setShowDeployModal] = useState(false);
-  const [deployingComposition, setDeployingComposition] = useState<ServerComposition | null>(null);
-  const [exporting, setExporting] = useState(false);
 
   const resetForm = () => {
     setName('');
@@ -77,32 +71,7 @@ export default function CompositionsTab({
   };
 
   const openDeployModal = (composition: ServerComposition) => {
-    setDeployingComposition(composition);
-    setShowDeployModal(true);
-  };
-
-  const downloadCompositionZip = async (composition: ServerComposition) => {
-    setExporting(true);
-    try {
-      const blob = await exportComposition(composition.id, {
-        prefix_tool_names: false,
-        merge_resources: true,
-        merge_prompts: true,
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${composition.name?.toLowerCase().replace(/\s+/g, '-') || 'composition'}-mcp-server.zip`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      toast.success('Composition exported successfully');
-    } catch {
-      toast.error('Failed to export composition');
-    } finally {
-      setExporting(false);
-    }
+    navigate(`/deploy?target=composition&id=${encodeURIComponent(composition.id)}`);
   };
 
   const toggleServer = (serverId: string) => {
@@ -149,6 +118,27 @@ export default function CompositionsTab({
     );
   }, [compositions, searchQuery]);
 
+  const newestComposition = useMemo(() => {
+    if (!compositions.length) return null;
+    return [...compositions].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
+  }, [compositions]);
+
+  const totalComposedServers = useMemo(
+    () => compositions.reduce((acc, composition) => acc + composition.server_ids.length, 0),
+    [compositions]
+  );
+
+  const totalComposedTools = useMemo(
+    () =>
+      compositions.reduce(
+        (compositionAcc, composition) =>
+          compositionAcc +
+          composition.server_ids.reduce((serverAcc, id) => serverAcc + (servers.find((s) => s.id === id)?.tools?.length || 0), 0),
+        0
+      ),
+    [compositions, servers]
+  );
+
   if (loading) {
     return (
       <div className="loading" style={{ minHeight: '200px' }}>
@@ -159,20 +149,42 @@ export default function CompositionsTab({
 
   return (
     <>
-      <div className="card page-quick-actions-card" style={{ marginBottom: '1rem' }}>
-        <div className="page-quick-actions-head">
+      <div className="card dashboard-command-center composition-command-center">
+        <div className="dashboard-command-center-head">
           <div>
-            <h3 className="card-title" style={{ margin: 0 }}>Composition quick start</h3>
-            <p className="page-quick-actions-subtitle">Combine multiple servers into one deployable MCP endpoint.</p>
+            <h3 className="card-title" style={{ margin: 0 }}>Composition command center</h3>
+            <p className="dashboard-command-center-subtitle">
+              Combine multiple MCP servers into one deployable endpoint with opinionated hosted defaults.
+            </p>
           </div>
-          <button type="button" className="btn btn-primary" onClick={() => setShowFormModal(true)}>
+          <div className="dashboard-command-center-pills">
+            <span className="dashboard-cc-pill">{compositions.length} compositions</span>
+            <span className="dashboard-cc-pill">{totalComposedServers} linked servers</span>
+            <span className="dashboard-cc-pill">{totalComposedTools} total tools</span>
+          </div>
+        </div>
+        {newestComposition && (
+          <div className="dashboard-command-center-latest">
+            <div>
+              <div className="dashboard-command-center-label">Latest composition</div>
+              <div className="dashboard-command-center-name">{newestComposition.name}</div>
+            </div>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleEdit(newestComposition)}>
+              <i className="bi bi-pencil"></i>
+              Open latest
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="card composition-action-row-card">
+        <div className={`composition-action-row ${compositions.length === 0 ? 'single' : ''}`}>
+          <button type="button" className="btn btn-primary composition-action-btn" onClick={() => setShowFormModal(true)}>
             <i className="bi bi-plus-lg"></i>
             New Composition
           </button>
-        </div>
-        {compositions.length > 0 && (
-          <div className="page-quick-actions-toolbar">
-            <div className="form-group" style={{ marginBottom: 0 }}>
+          {compositions.length > 0 && (
+            <div className="form-group composition-search-group">
               <label className="form-label">Search</label>
               <input
                 className="form-control"
@@ -181,8 +193,8 @@ export default function CompositionsTab({
                 placeholder="Search compositions"
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {compositions.length === 0 && !showFormModal ? (
@@ -198,7 +210,7 @@ export default function CompositionsTab({
       ) : (
         <div className="server-grid">
           {filteredCompositions.map((composition) => (
-            <div className="card" key={composition.id}>
+            <div className="card composition-card" key={composition.id}>
               <div className="card-header">
                 <div>
                   <h3 className="card-title">{composition.name}</h3>
@@ -233,15 +245,14 @@ export default function CompositionsTab({
                   </span>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--card-border)' }}>
-                <button type="button" className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => openDeployModal(composition)}>
+              <div className="composition-card-actions">
+                <button type="button" className="btn btn-primary btn-sm composition-card-action-btn" onClick={() => openDeployModal(composition)}>
                   <i className="bi bi-cloud-arrow-up"></i>
                   Deploy
                 </button>
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ flex: 1 }}
+                  className="btn btn-secondary btn-sm composition-card-action-btn"
                   onClick={() => openTryChat({ type: 'composition', id: composition.id, name: composition.name })}
                 >
                   <i className="bi bi-stars"></i>
@@ -267,17 +278,6 @@ export default function CompositionsTab({
           <button className="btn btn-secondary" onClick={() => setSearchQuery('')}>Clear search</button>
         </div>
       )}
-
-      <DeployOptionsModal
-        open={showDeployModal && !!deployingComposition}
-        title={deployingComposition?.name || 'Composition'}
-        artifactLabel="composition"
-        downloading={exporting}
-        onClose={() => setShowDeployModal(false)}
-        onDownloadZip={() => downloadCompositionZip(deployingComposition!)}
-        onHostedPublish={deployingComposition ? async () => compositionHostedDeploy(deployingComposition.id) : undefined}
-        onHostedStatus={deployingComposition ? async () => compositionHostedStatus(deployingComposition.id) : undefined}
-      />
 
       {showFormModal && (
         <div className="modal-overlay" onClick={() => { setShowFormModal(false); resetForm(); }}>

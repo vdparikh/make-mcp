@@ -658,18 +658,21 @@ export default function ServerEditor() {
   ];
 
   return (
-    <div>
-      <div className="page-header">
+    <div className="server-editor-v2">
+      <div className="page-header server-editor-hero">
         <div>
-          <nav style={{ marginBottom: '0.5rem' }}>
-            <Link to="/" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.875rem' }}>
+          <nav className="page-breadcrumb">
+            <Link to="/" className="page-breadcrumb-link">
               Dashboard
             </Link>
-            <span style={{ color: 'var(--text-muted)', margin: '0 0.5rem' }}>/</span>
-            <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>{server.name}</span>
+            <span className="page-breadcrumb-sep">/</span>
+            <span className="page-breadcrumb-current">{server.name}</span>
           </nav>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <h1 className="page-title">{server.name}</h1>
+            <h1 className="page-title">
+              <i className="bi bi-server page-title-icon"></i>
+              {server.name}
+            </h1>
             <span className="badge badge-primary">v{server.latest_version || server.version}</span>
             <span className={`status-badge ${server.status || 'draft'}`}>
               <i className={`bi ${server.status === 'published' ? 'bi-check-circle-fill' : server.status === 'archived' ? 'bi-archive-fill' : 'bi-pencil-fill'}`}></i>
@@ -691,6 +694,12 @@ export default function ServerEditor() {
               </span>
             )}
           </p>
+          <div className="server-editor-hero-stats">
+            <span><i className="bi bi-tools"></i> {server.tools?.length || 0} tools</span>
+            <span><i className="bi bi-folder"></i> {server.resources?.length || 0} resources</span>
+            <span><i className="bi bi-chat-text"></i> {server.prompts?.length || 0} prompts</span>
+            <span><i className="bi bi-rocket-takeoff"></i> {hostedRuntime?.running ? 'Hosted running' : 'Not hosted'}</span>
+          </div>
         </div>
         <div className="server-editor-header-actions">
           <button
@@ -709,7 +718,7 @@ export default function ServerEditor() {
           </button>
           <button 
             className={`btn btn-success server-editor-deploy-btn ${hostedRuntime?.running ? 'running' : ''}`}
-            onClick={() => { setShowDeployModal(true); setSelectedDeploy('hosted'); }}
+            onClick={() => navigate(`/deploy?target=server&id=${encodeURIComponent(server.id)}`)}
           >
             {hostedRuntime?.running && (
               <span className="server-editor-deploy-dot" />
