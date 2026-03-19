@@ -12,6 +12,7 @@ import Observability from './pages/Observability';
 import Docs from './pages/Docs';
 import DeployFlowPage from './pages/DeployFlowPage';
 import HostedCatalogPage from './pages/HostedCatalogPage';
+import HostedCallerKeysPage from './pages/HostedCallerKeysPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { TryChatProvider } from './contexts/TryChatContext';
@@ -56,6 +57,7 @@ function AppLayout() {
             <Route path="/marketplace" element={<Marketplace />} />
             <Route path="/observability" element={<Observability />} />
             <Route path="/hosted" element={<HostedCatalogPage />} />
+            <Route path="/hosted/keys" element={<HostedCallerKeysPage />} />
             <Route path="/import/openapi" element={<ImportOpenAPI />} />
             <Route path="/docs" element={<Docs />} />
             <Route path="/deploy" element={<DeployFlowPage />} />

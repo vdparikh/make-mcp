@@ -229,6 +229,29 @@ type HostedSession struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
+// HostedCallerAPIKey stores user-owned caller identity credentials for hosted requests.
+type HostedCallerAPIKey struct {
+	ID           string     `json:"id"`
+	OwnerUserID  string     `json:"owner_user_id"`
+	KeyID        string     `json:"key_id"`
+	CallerUserID string     `json:"caller_user_id"` // verified identity resolved from this key
+	TenantID     string     `json:"tenant_id,omitempty"`
+	Scopes       []string   `json:"scopes,omitempty"`
+	AllowAlias   bool       `json:"allow_alias"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
+	CreatedBy    string     `json:"created_by,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// HostedCallerIdentity is the verified identity resolved from a caller API key.
+type HostedCallerIdentity struct {
+	CallerUserID string
+	TenantID     string
+	Scopes       []string
+	AllowAlias   bool
+}
+
 // HealingSuggestion represents an auto-repair suggestion
 type HealingSuggestion struct {
 	ID             string          `json:"id"`

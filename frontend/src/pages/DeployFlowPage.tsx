@@ -606,6 +606,12 @@ export default function DeployFlowPage() {
                     {requireCallerIdentity ? 'Required' : 'Optional'}
                   </span>
                 </label>
+                <div className="deploy-flow-inline-actions" style={{ marginTop: '0.5rem' }}>
+                  <Link className="btn btn-sm btn-outline-primary" to="/hosted/keys">
+                    <i className="bi bi-key"></i>
+                    Manage caller keys
+                  </Link>
+                </div>
               </div>
 
               <div className="deploy-publish-card">

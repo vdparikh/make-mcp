@@ -111,8 +111,8 @@ export default function HostedCatalogPage() {
 
       <div className="card dashboard-toolbar-card" style={{ marginBottom: '1rem' }}>
         <div className="dashboard-toolbar-row">
-          <div className="dashboard-search">
-            <i className="bi bi-search"></i>
+          <div className="dashboard-search d-flex align-items-center">
+            <i className="bi bi-search me-2"></i>
             <input
               type="text"
               className="form-control"
@@ -188,8 +188,8 @@ export default function HostedCatalogPage() {
                     </div>
                   )}
 
-                  <div className="deploy-flow-inline-actions" style={{ marginTop: '0.75rem' }}>
-                    <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => copyText(item.mcp_config, 'MCP config copied')}>
+                  <div className="deploy-flow-inline-actions text-center margin-auto" style={{ marginTop: '0.75rem' }}>
+                    <button type="button" className="btn btn-sm btn-outline-primary me-2" onClick={() => copyText(item.mcp_config, 'MCP config copied')}>
                       <i className="bi bi-clipboard"></i>
                       Copy config
                     </button>
@@ -207,6 +207,25 @@ export default function HostedCatalogPage() {
                     <pre className="hosted-catalog-config-pre">{item.mcp_config}</pre>
                   )}
                 </div>
+
+                {item.require_caller_identity && (
+                  <div className="deploy-publish-card">
+                    <div className="deploy-publish-card-header">
+                      <i className="bi bi-person-badge"></i>
+                      <span>Caller identity Required</span>
+                    </div>
+                    <div className="d-flex align-items-center">
+                    <p className="deploy-publish-card-desc">
+                      Every request must include X-Make-MCP-Caller-Id. Enables per-user attribution in observability
+                    </p>
+                    <div className="deploy-flow-inline-actions" style={{ marginTop: '0.5rem' }}>
+                      <Link className="btn btn-sm btn-outline-primary" to="/hosted/keys">
+                        <i className="bi bi-key"></i>
+                        Manage caller keys
+                      </Link>
+                    </div>
+                    </div>
+                  </div>)}
               </article>
             );
           })}

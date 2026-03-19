@@ -172,6 +172,10 @@ export default function Sidebar() {
           </button>
           <div className="top-nav-dropdown top-nav-user-dropdown">
             {user?.email && <div className="top-nav-user-email">{user.email}</div>}
+            <button type="button" className="top-nav-dropdown-item" onClick={() => navigate('/hosted/keys')}>
+              <i className="bi bi-key" />
+              Caller API Keys
+            </button>
             <button type="button" className="top-nav-dropdown-item danger" onClick={handleLogout}>
               <i className="bi bi-box-arrow-left" />
               Sign Out

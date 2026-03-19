@@ -3,7 +3,10 @@ package database
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -272,6 +275,22 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_hosted_sessions_user_id ON hosted_sessions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_hosted_sessions_status ON hosted_sessions(status)`,
+		`CREATE TABLE IF NOT EXISTS hosted_user_caller_api_keys (
+			id UUID PRIMARY KEY,
+			owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			key_id VARCHAR(32) NOT NULL UNIQUE,
+			key_hash VARCHAR(128) NOT NULL,
+			caller_user_id VARCHAR(255) NOT NULL,
+			tenant_id VARCHAR(255),
+			scopes TEXT[] NOT NULL DEFAULT '{}',
+			allow_alias BOOLEAN NOT NULL DEFAULT false,
+			expires_at TIMESTAMPTZ,
+			revoked_at TIMESTAMPTZ,
+			created_by UUID,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_hosted_user_caller_api_keys_owner_user_id ON hosted_user_caller_api_keys(owner_user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_hosted_user_caller_api_keys_key_id ON hosted_user_caller_api_keys(key_id)`,
 	}
 
 	for _, m := range migrations {
@@ -1842,6 +1861,173 @@ func (db *DB) ListRunningHostedSessions(ctx context.Context) ([]models.HostedSes
 		return nil, fmt.Errorf("iterating running hosted sessions: %w", err)
 	}
 	return sessions, nil
+}
+
+func hashHostedCallerAPIKey(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func generateHostedCallerAPIKeyMaterial() (keyID, secret, fullKey string, err error) {
+	keyIDBytes := make([]byte, 8)
+	if _, err = rand.Read(keyIDBytes); err != nil {
+		return "", "", "", err
+	}
+	secretBytes := make([]byte, 16)
+	if _, err = rand.Read(secretBytes); err != nil {
+		return "", "", "", err
+	}
+	keyID = hex.EncodeToString(keyIDBytes)
+	secret = hex.EncodeToString(secretBytes)
+	fullKey = "mkc_" + keyID + "_" + secret
+	return keyID, secret, fullKey, nil
+}
+
+func normalizeScopes(scopes []string) []string {
+	if len(scopes) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		v := strings.TrimSpace(s)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func (db *DB) CreateHostedCallerAPIKey(ctx context.Context, ownerUserID, createdBy, callerUserID, tenantID string, scopes []string, allowAlias bool, expiresAt *time.Time) (*models.HostedCallerAPIKey, string, error) {
+	if strings.TrimSpace(ownerUserID) == "" || strings.TrimSpace(callerUserID) == "" {
+		return nil, "", fmt.Errorf("owner_user_id and caller_user_id are required")
+	}
+	keyID, _, fullKey, err := generateHostedCallerAPIKeyMaterial()
+	if err != nil {
+		return nil, "", fmt.Errorf("generating caller key: %w", err)
+	}
+	keyHash := hashHostedCallerAPIKey(fullKey)
+	now := time.Now().UTC()
+	record := &models.HostedCallerAPIKey{
+		ID:           uuid.New().String(),
+		OwnerUserID:  ownerUserID,
+		KeyID:        keyID,
+		CallerUserID: strings.TrimSpace(callerUserID),
+		TenantID:     strings.TrimSpace(tenantID),
+		Scopes:       normalizeScopes(scopes),
+		AllowAlias:   allowAlias,
+		ExpiresAt:    expiresAt,
+		CreatedBy:    strings.TrimSpace(createdBy),
+		CreatedAt:    now,
+	}
+	var createdByParam interface{}
+	if strings.TrimSpace(record.CreatedBy) == "" {
+		createdByParam = nil
+	} else {
+		createdByParam = record.CreatedBy
+	}
+	_, err = db.pool.Exec(ctx, `
+		INSERT INTO hosted_user_caller_api_keys (
+			id, owner_user_id, key_id, key_hash, caller_user_id, tenant_id, scopes, allow_alias, expires_at, created_by, created_at
+		) VALUES (
+			$1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, $9, $10, $11
+		)
+	`,
+		record.ID, record.OwnerUserID, record.KeyID, keyHash, record.CallerUserID, record.TenantID, record.Scopes, record.AllowAlias, record.ExpiresAt, createdByParam, record.CreatedAt,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("inserting hosted caller key: %w", err)
+	}
+	return record, fullKey, nil
+}
+
+func (db *DB) ListHostedCallerAPIKeysByUser(ctx context.Context, ownerUserID string) ([]models.HostedCallerAPIKey, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT id, owner_user_id::text, key_id, caller_user_id, COALESCE(tenant_id, ''), scopes, allow_alias, expires_at, revoked_at, COALESCE(created_by::text, ''), created_at
+		FROM hosted_user_caller_api_keys
+		WHERE owner_user_id::text = $1
+		ORDER BY created_at DESC
+	`, ownerUserID)
+	if err != nil {
+		return nil, fmt.Errorf("listing hosted caller keys: %w", err)
+	}
+	defer rows.Close()
+	out := make([]models.HostedCallerAPIKey, 0)
+	for rows.Next() {
+		var k models.HostedCallerAPIKey
+		if err := rows.Scan(&k.ID, &k.OwnerUserID, &k.KeyID, &k.CallerUserID, &k.TenantID, &k.Scopes, &k.AllowAlias, &k.ExpiresAt, &k.RevokedAt, &k.CreatedBy, &k.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scanning hosted caller key: %w", err)
+		}
+		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating hosted caller keys: %w", err)
+	}
+	return out, nil
+}
+
+func (db *DB) RevokeHostedCallerAPIKey(ctx context.Context, ownerUserID, keyRecordID string) error {
+	_, err := db.pool.Exec(ctx, `
+		UPDATE hosted_user_caller_api_keys
+		SET revoked_at = NOW()
+		WHERE id = $1 AND owner_user_id::text = $2 AND revoked_at IS NULL
+	`, keyRecordID, ownerUserID)
+	if err != nil {
+		return fmt.Errorf("revoking hosted caller key: %w", err)
+	}
+	return nil
+}
+
+func parseHostedCallerAPIKey(raw string) (keyID string, ok bool) {
+	value := strings.TrimSpace(raw)
+	if !strings.HasPrefix(value, "mkc_") {
+		return "", false
+	}
+	parts := strings.Split(value, "_")
+	if len(parts) != 3 || parts[1] == "" || parts[2] == "" {
+		return "", false
+	}
+	return parts[1], true
+}
+
+func (db *DB) ValidateHostedCallerAPIKey(ctx context.Context, rawKey string) (*models.HostedCallerIdentity, error) {
+	keyID, ok := parseHostedCallerAPIKey(rawKey)
+	if !ok {
+		return nil, nil
+	}
+	var storedHash string
+	var callerUserID string
+	var tenantID string
+	var scopes []string
+	var allowAlias bool
+	err := db.pool.QueryRow(ctx, `
+		SELECT key_hash, caller_user_id, COALESCE(tenant_id, ''), scopes, allow_alias
+		FROM hosted_user_caller_api_keys
+		WHERE key_id = $1
+		  AND revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > NOW())
+	`, keyID).Scan(&storedHash, &callerUserID, &tenantID, &scopes, &allowAlias)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("validating hosted caller key: %w", err)
+	}
+	providedHash := hashHostedCallerAPIKey(strings.TrimSpace(rawKey))
+	if len(storedHash) == 0 || len(storedHash) != len(providedHash) || subtle.ConstantTimeCompare([]byte(storedHash), []byte(providedHash)) != 1 {
+		return nil, nil
+	}
+	return &models.HostedCallerIdentity{
+		CallerUserID: callerUserID,
+		TenantID:     tenantID,
+		Scopes:       normalizeScopes(scopes),
+		AllowAlias:   allowAlias,
+	}, nil
 }
 
 func (db *DB) GetServerVersions(ctx context.Context, serverID string) ([]models.ServerVersion, error) {

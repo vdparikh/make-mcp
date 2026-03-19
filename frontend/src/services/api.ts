@@ -715,6 +715,33 @@ export interface HostedCatalogItem {
   last_ensured_at?: string;
 }
 
+export interface HostedCallerAPIKey {
+  id: string;
+  owner_user_id: string;
+  key_id: string;
+  caller_user_id: string;
+  tenant_id?: string;
+  scopes?: string[];
+  allow_alias: boolean;
+  expires_at?: string;
+  revoked_at?: string;
+  created_by?: string;
+  created_at: string;
+}
+
+export interface HostedCallerAPIKeyCreateRequest {
+  caller_user_id: string;
+  tenant_id?: string;
+  scopes?: string[];
+  allow_alias?: boolean;
+  expires_at?: string;
+}
+
+export interface HostedCallerAPIKeyCreateResponse {
+  key: HostedCallerAPIKey;
+  api_key: string;
+}
+
 export const hostedPublish = async (
   serverId: string,
   version?: string,
@@ -746,6 +773,22 @@ export const listHostedSessions = async (): Promise<HostedSession[]> => {
 export const listHostedCatalog = async (): Promise<HostedCatalogItem[]> => {
   const { data } = await api.get<{ items: HostedCatalogItem[] }>('/hosted/catalog');
   return data.items || [];
+};
+
+export const listHostedCallerAPIKeys = async (): Promise<HostedCallerAPIKey[]> => {
+  const { data } = await api.get<{ keys: HostedCallerAPIKey[] }>('/hosted/caller-keys');
+  return data.keys || [];
+};
+
+export const createHostedCallerAPIKey = async (
+  request: HostedCallerAPIKeyCreateRequest
+): Promise<HostedCallerAPIKeyCreateResponse> => {
+  const { data } = await api.post<HostedCallerAPIKeyCreateResponse>('/hosted/caller-keys', request);
+  return data;
+};
+
+export const revokeHostedCallerAPIKey = async (keyId: string): Promise<void> => {
+  await api.post(`/hosted/caller-keys/${encodeURIComponent(keyId)}/revoke`);
 };
 
 export const checkHostedSessionHealth = async (serverId: string): Promise<HostedSession> => {

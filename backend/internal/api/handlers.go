@@ -129,6 +129,9 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		hostedSessions.Use(h.AuthMiddleware())
 		{
 			hostedSessions.GET("/catalog", h.ListHostedCatalog)
+			hostedSessions.GET("/caller-keys", h.ListHostedCallerAPIKeys)
+			hostedSessions.POST("/caller-keys", h.CreateHostedCallerAPIKey)
+			hostedSessions.POST("/caller-keys/:key_id/revoke", h.RevokeHostedCallerAPIKey)
 			hostedSessions.GET("/sessions", h.ListHostedSessions)
 			hostedSessions.GET("/sessions/:server_id/health", h.GetHostedSessionHealth)
 			hostedSessions.POST("/sessions/:server_id/restart", h.RestartHostedSession)
@@ -1422,6 +1425,20 @@ type HostedCatalogItem struct {
 	LastEnsuredAt          string `json:"last_ensured_at,omitempty"`
 }
 
+type HostedCallerAPIKeyCreateRequest struct {
+	CallerUserID string   `json:"caller_user_id,omitempty"` // defaults to current user id
+	TenantID     string   `json:"tenant_id,omitempty"`
+	Scopes       []string `json:"scopes,omitempty"`
+	AllowAlias   bool     `json:"allow_alias"`
+	ExpiresAt    string   `json:"expires_at,omitempty"` // RFC3339; optional
+}
+
+type HostedCallerAPIKeyCreateResponse struct {
+	Key models.HostedCallerAPIKey `json:"key"`
+	// api_key is only returned once at creation time.
+	APIKey string `json:"api_key"`
+}
+
 func normalizeIdleTimeoutMinutes(value *int) (int, error) {
 	if value == nil {
 		return 0, nil
@@ -1637,7 +1654,7 @@ func (h *Handler) buildHostedMCPConfig(slug, endpoint string, server *models.Ser
 		headers["Authorization"] = "Bearer " + hostedAccessKey
 	}
 	if server.RequireCallerIdentity {
-		headers["X-Make-MCP-Caller-Id"] = "<your-caller-id>"
+		headers["X-Make-MCP-Caller-Id"] = "<caller-api-key>"
 		headers["X-Make-MCP-Tenant-Id"] = "<your-tenant-id>"
 	}
 	if len(headers) > 0 {
@@ -1849,6 +1866,85 @@ func (h *Handler) ListHostedCatalog(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *Handler) ListHostedCallerAPIKeys(c *gin.Context) {
+	userID := strings.TrimSpace(h.currentUserID(c))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	keys, err := h.db.ListHostedCallerAPIKeysByUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"keys": keys})
+}
+
+func (h *Handler) CreateHostedCallerAPIKey(c *gin.Context) {
+	var req HostedCallerAPIKeyCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+	userID := strings.TrimSpace(h.currentUserID(c))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	req.CallerUserID = strings.TrimSpace(req.CallerUserID)
+	req.TenantID = strings.TrimSpace(req.TenantID)
+	// User-scoped key: caller identity defaults to current user and cannot impersonate other users.
+	if req.CallerUserID == "" {
+		req.CallerUserID = userID
+	}
+	if req.CallerUserID != userID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "caller_user_id must match current user"})
+		return
+	}
+	var expiresAt *time.Time
+	if strings.TrimSpace(req.ExpiresAt) != "" {
+		t, err := time.Parse(time.RFC3339, req.ExpiresAt)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be RFC3339 format"})
+			return
+		}
+		expiresUTC := t.UTC()
+		if !expiresUTC.After(time.Now().UTC()) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be in the future"})
+			return
+		}
+		expiresAt = &expiresUTC
+	}
+	createdBy := userID
+	keyRecord, plainKey, err := h.db.CreateHostedCallerAPIKey(c.Request.Context(), userID, createdBy, req.CallerUserID, req.TenantID, req.Scopes, req.AllowAlias, expiresAt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, HostedCallerAPIKeyCreateResponse{
+		Key:    *keyRecord,
+		APIKey: plainKey,
+	})
+}
+
+func (h *Handler) RevokeHostedCallerAPIKey(c *gin.Context) {
+	userID := strings.TrimSpace(h.currentUserID(c))
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	keyID := strings.TrimSpace(c.Param("key_id"))
+	if keyID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key_id is required"})
+		return
+	}
+	if err := h.db.RevokeHostedCallerAPIKey(c.Request.Context(), userID, keyID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 func (h *Handler) ListHostedSessions(c *gin.Context) {
@@ -2084,15 +2180,37 @@ func (h *Handler) requireHostedAccessBoundary(c *gin.Context, server *models.Ser
 
 	// Check 2: caller identity requirement (independent axis)
 	if server.RequireCallerIdentity {
-		callerID, _ := hostedCallerIdentityFromRequest(c)
-		if callerID == "" {
+		callerKey, _ := hostedCallerIdentityFromRequest(c)
+		if callerKey == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error":      "caller identity required",
-				"hint":       "set X-Make-MCP-Caller-Id header in your MCP client config",
+				"error":      "caller API key required",
+				"hint":       "set X-Make-MCP-Caller-Id to a generated caller API key (mkc_...)",
 				"header_key": "X-Make-MCP-Caller-Id",
 			})
 			return false
 		}
+		identity, err := h.db.ValidateHostedCallerAPIKey(c.Request.Context(), callerKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate caller identity"})
+			return false
+		}
+		if identity == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":      "invalid or expired caller API key",
+				"header_key": "X-Make-MCP-Caller-Id",
+			})
+			return false
+		}
+		resolvedCallerID := identity.CallerUserID
+		if identity.AllowAlias {
+			alias := strings.TrimSpace(c.GetHeader("X-Make-MCP-Caller-Alias"))
+			if alias != "" {
+				resolvedCallerID = alias
+			}
+		}
+		c.Set("verified_caller_id", resolvedCallerID)
+		c.Set("verified_tenant_id", identity.TenantID)
+		c.Set("verified_scopes", strings.Join(identity.Scopes, ","))
 	}
 
 	return true
@@ -2120,6 +2238,21 @@ func (h *Handler) proxyToHostedContainer(c *gin.Context, cfg *hosted.ContainerCo
 			req.Header.Set("X-Forwarded-Proto", "https")
 		} else {
 			req.Header.Set("X-Forwarded-Proto", "http")
+		}
+		if v, ok := c.Get("verified_caller_id"); ok {
+			if callerID, ok := v.(string); ok && strings.TrimSpace(callerID) != "" {
+				req.Header.Set("X-Make-MCP-Caller-Id", callerID)
+			}
+		}
+		if v, ok := c.Get("verified_tenant_id"); ok {
+			if tenantID, ok := v.(string); ok && strings.TrimSpace(tenantID) != "" {
+				req.Header.Set("X-Make-MCP-Tenant-Id", tenantID)
+			}
+		}
+		if v, ok := c.Get("verified_scopes"); ok {
+			if scopes, ok := v.(string); ok && strings.TrimSpace(scopes) != "" {
+				req.Header.Set("X-Make-MCP-Scopes", scopes)
+			}
 		}
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, proxyErr error) {
