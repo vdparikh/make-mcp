@@ -79,12 +79,8 @@ export default function TryChatModal() {
   if (!open) return null;
 
   return (
-    <div className="modal-overlay" onClick={closeTryChat} style={{ zIndex: 2100 }}>
-      <div
-        className="modal-content"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: '92vw', maxWidth: '1400px', height: '90vh', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
-      >
+    <div className="modal-overlay try-chat-overlay" onClick={closeTryChat}>
+      <div className="modal-content try-chat-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">
             <i className="bi bi-stars" style={{ marginRight: '0.5rem' }} />
@@ -94,28 +90,28 @@ export default function TryChatModal() {
             Close
           </button>
         </div>
-        <div className="modal-body" style={{ flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: '1rem', minHeight: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <div style={{ flex: 1, overflow: 'auto', border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.75rem', background: 'var(--dark-bg)' }}>
+        <div className="modal-body try-chat-body">
+          <div className="try-chat-main">
+            <div className="try-chat-thread">
               {messages.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)' }}>
+                <div className="try-chat-empty">
                   Ask a real-world question to preview agent behavior.
                 </div>
               ) : (
                 messages.map((m, idx) => (
-                  <div key={idx} style={{ marginBottom: '0.75rem' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      {m.role === 'user' ? 'You' : 'Assistant'}
+                  <div key={idx} className={`try-chat-message-row ${m.role === 'user' ? 'user' : 'assistant'}`}>
+                    <div className="try-chat-message-label">{m.role === 'user' ? 'You' : 'Assistant'}</div>
+                    <div className={`try-chat-bubble ${m.role === 'user' ? 'user' : 'assistant'}`}>
+                      {m.content}
                     </div>
-                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{m.content}</div>
                   </div>
                 ))
               )}
-              {sending && <div style={{ color: 'var(--text-muted)' }}>Thinking...</div>}
+              {sending && <div className="try-chat-thinking">Thinking...</div>}
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+            <div className="try-chat-composer">
               <textarea
-                className="form-control"
+                className="form-control try-chat-input"
                 rows={3}
                 placeholder="Ask the assistant..."
                 value={input}
@@ -127,14 +123,14 @@ export default function TryChatModal() {
                   }
                 }}
               />
-              <button className="btn btn-primary" onClick={() => void sendMessage()} disabled={sending || !input.trim()}>
+              <button className="btn btn-primary try-chat-send" onClick={() => void sendMessage()} disabled={sending || !input.trim()}>
                 Send
               </button>
             </div>
           </div>
-          <div style={{ border: '1px solid var(--card-border)', borderRadius: '8px', padding: '0.75rem', background: 'var(--hover-bg)' }}>
-            <h4 style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '0.95rem' }}>Session Settings</h4>
-            <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+          <div className="try-chat-sidebar">
+            <h4 className="try-chat-sidebar-title">Session Settings</h4>
+            <div className="form-group try-chat-field">
               <label className="form-label">Provider</label>
               <select
                 className="form-control"
@@ -154,30 +150,30 @@ export default function TryChatModal() {
                 ))}
               </select>
             </div>
-            <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+            <div className="form-group try-chat-field">
               <label className="form-label">Model</label>
               <input className="form-control" value={model} onChange={(e) => setModel(e.target.value)} />
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <div className="try-chat-muted-note">
               Default model: {selectedProvider?.model || '—'}
             </div>
-            <hr style={{ borderColor: 'var(--card-border)', margin: '0.75rem 0' }} />
-            <h4 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '0.95rem' }}>Target Context</h4>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            <hr className="try-chat-divider" />
+            <h4 className="try-chat-sidebar-title">Target Context</h4>
+            <div className="try-chat-context">
               <div><strong>Type:</strong> {target?.type || 'general'}</div>
               <div><strong>Name:</strong> {target?.name || '—'}</div>
               <div><strong>ID:</strong> {target?.id || '—'}</div>
-              <div><strong>Endpoint:</strong> {endpoint || '—'}</div>
+              <div><strong>Endpoint:</strong> <span className="try-chat-endpoint">{endpoint || '—'}</span></div>
             </div>
-            <hr style={{ borderColor: 'var(--card-border)', margin: '0.75rem 0' }} />
-            <h4 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '0.95rem' }}>Tool Calls</h4>
+            <hr className="try-chat-divider" />
+            <h4 className="try-chat-sidebar-title">Tool Calls</h4>
             {toolEvents.length === 0 ? (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>No tool calls yet.</div>
+              <div className="try-chat-muted-note">No tool calls yet.</div>
             ) : (
-              <div style={{ maxHeight: '250px', overflow: 'auto', fontSize: '0.8rem' }}>
+              <div className="try-chat-tool-events">
                 {toolEvents.slice(-20).map((e, idx) => (
-                  <div key={`${e.name}-${idx}`} style={{ marginBottom: '0.35rem', color: e.success ? 'var(--success-color)' : 'var(--danger)' }}>
-                    {e.success ? '✓' : '✗'} {e.name} ({e.duration_ms} ms){e.error ? ` - ${e.error}` : ''}
+                  <div key={`${e.name}-${idx}`} className={`try-chat-tool-event ${e.success ? 'success' : 'error'}`}>
+                    <span className="marker">{e.success ? '✓' : '✗'}</span> {e.name} ({e.duration_ms} ms){e.error ? ` - ${e.error}` : ''}
                   </div>
                 ))}
               </div>

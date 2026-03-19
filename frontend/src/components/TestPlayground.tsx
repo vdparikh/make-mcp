@@ -5,6 +5,7 @@ import type { Tool, TestToolResponse, MCPAppPayload, ToolTestPreset, PolicyEvalu
 import { isMCPAppOutput } from '../types';
 import type { EnvProfileKey } from '../types';
 import { testTool, listToolTestPresets, createToolTestPreset, deleteToolTestPreset, evaluatePolicy, evaluatePolicyDetailed } from '../services/api';
+import ConfirmModal from './ConfirmModal';
 
 /** Format a table cell value so objects/arrays show as JSON instead of "[object Object]" */
 function formatTableCellValue(value: unknown): ReactNode {
@@ -257,6 +258,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
   const [dryRun, setDryRun] = useState(false);
   const [presets, setPresets] = useState<ToolTestPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const [showDeletePresetConfirm, setShowDeletePresetConfirm] = useState(false);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [policyEval, setPolicyEval] = useState<PolicyEvaluationResult | null>(null);
   const [whatIfOpen, setWhatIfOpen] = useState(false);
@@ -522,8 +524,6 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
 
   const handleDeletePreset = async () => {
     if (!selectedTool || !selectedPresetId) return;
-    const preset = presets.find((p) => p.id === selectedPresetId);
-    if (preset && !window.confirm(`Delete preset "${preset.name}"?`)) return;
     try {
       await deleteToolTestPreset(selectedTool, selectedPresetId);
       fetchPresets();
@@ -540,7 +540,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
   };
 
   return (
-    <div>
+    <div className="test-playground">
       <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h3 className="card-title" style={{ margin: 0 }}>
           <i className="bi bi-play-circle" style={{ marginRight: '0.5rem', color: 'var(--secondary-color)' }}></i>
@@ -556,7 +556,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
         </a>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+      <div className="test-playground-grid">
         <div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '1rem' }}>
             <div className="form-group" style={{ flex: '1 1 200px', marginBottom: 0 }}>
@@ -630,7 +630,13 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
               <button type="button" className="btn btn-outline-primary btn-sm" onClick={handleSavePreset} title="Save current input + context as preset">
                 <i className="bi bi-bookmark-plus"></i>
               </button>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={handleDeletePreset} disabled={!selectedPresetId} title="Delete preset">
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => setShowDeletePresetConfirm(true)}
+                disabled={!selectedPresetId}
+                title="Delete preset"
+              >
                 <i className="bi bi-trash"></i>
               </button>
             </div>
@@ -689,10 +695,9 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
           )}
 
           <button 
-            className="btn btn-success" 
+            className="btn btn-success test-execute-btn" 
             onClick={handleTest}
             disabled={!selectedTool || testing}
-            style={{ width: '100%' }}
           >
             {testing ? (
               <>
@@ -725,16 +730,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
             </div>
           ) : (
             <div>
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.75rem',
-                marginBottom: '1rem',
-                padding: '1rem',
-                background: result.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                border: `1px solid ${result.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                borderRadius: '8px'
-              }}>
+              <div className={`test-result-banner ${result.success ? 'success' : 'error'}`}>
                 <i className={`bi ${result.success ? 'bi-check-circle-fill' : 'bi-x-circle-fill'}`} 
                    style={{ fontSize: '1.5rem', color: result.success ? 'var(--success-color)' : 'var(--danger-color)' }}></i>
                 <div style={{ flex: 1 }}>
@@ -762,13 +758,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
               </div>
 
               {policyEval && (
-                <div style={{
-                  background: policyEval.allowed && !policyEval.requires_approval ? 'rgba(16, 185, 129, 0.08)' : policyEval.requires_approval ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.08)',
-                  border: `1px solid ${policyEval.allowed && !policyEval.requires_approval ? 'rgba(16, 185, 129, 0.25)' : policyEval.requires_approval ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.25)'}`,
-                  borderRadius: '8px',
-                  padding: '1rem',
-                  marginBottom: '1rem',
-                }}>
+                <div className={`test-policy-card ${policyEval.allowed && !policyEval.requires_approval ? 'allowed' : policyEval.requires_approval ? 'approval' : 'denied'}`}>
                   <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <i className={`bi ${policyEval.allowed && !policyEval.requires_approval ? 'bi-shield-check' : policyEval.requires_approval ? 'bi-shield-exclamation' : 'bi-shield-x'}`}
                        style={{ color: policyEval.allowed && !policyEval.requires_approval ? 'var(--success-color)' : policyEval.requires_approval ? 'var(--warning-color)' : 'var(--danger-color)' }}></i>
@@ -788,13 +778,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
               )}
 
               {result.injected_context && Object.keys(result.injected_context).length > 0 && (
-                <div style={{ 
-                  background: 'var(--hover-bg)', 
-                  border: '1px solid var(--card-border)', 
-                  borderRadius: '8px', 
-                  padding: '0.75rem 1rem', 
-                  marginBottom: '1rem' 
-                }}>
+                <div className="test-context-card">
                   <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '0.375rem' }}>
                     <i className="bi bi-person-badge" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
                     Context passed to tool
@@ -806,13 +790,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
               )}
 
               {result.error && (
-                <div style={{ 
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '8px',
-                  padding: '1rem',
-                  marginBottom: '1rem'
-                }}>
+                <div className="test-error-card">
                   <div style={{ fontWeight: 600, color: 'var(--danger-color)', marginBottom: '0.5rem' }}>
                     <i className="bi bi-exclamation-triangle" style={{ marginRight: '0.5rem' }}></i>
                     Error
@@ -910,6 +888,18 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
           )}
         </div>
       </div>
+      <ConfirmModal
+        open={showDeletePresetConfirm}
+        title="Delete preset?"
+        message={`Delete preset "${presets.find((p) => p.id === selectedPresetId)?.name || 'selected preset'}"?`}
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setShowDeletePresetConfirm(false)}
+        onConfirm={async () => {
+          setShowDeletePresetConfirm(false);
+          await handleDeletePreset();
+        }}
+      />
     </div>
   );
 }

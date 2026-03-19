@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import type { Server, ServerComposition } from '../types';
 import DeployOptionsModal from './DeployOptionsModal';
 import { useTryChat } from '../contexts/TryChatContext';
+import ConfirmModal from './ConfirmModal';
 import {
   createComposition,
   updateComposition,
@@ -41,8 +42,10 @@ export default function CompositionsTab({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedServers, setSelectedServers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deleteCompositionId, setDeleteCompositionId] = useState<string | null>(null);
 
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [deployingComposition, setDeployingComposition] = useState<ServerComposition | null>(null);
@@ -64,7 +67,6 @@ export default function CompositionsTab({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this composition?')) return;
     try {
       await deleteComposition(id);
       toast.success('Composition deleted');
@@ -138,6 +140,15 @@ export default function CompositionsTab({
 
   const getServerName = (serverId: string) => servers.find((s) => s.id === serverId)?.name || serverId;
 
+  const filteredCompositions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return compositions;
+    return compositions.filter((composition) =>
+      composition.name.toLowerCase().includes(query) ||
+      (composition.description || '').toLowerCase().includes(query)
+    );
+  }, [compositions, searchQuery]);
+
   if (loading) {
     return (
       <div className="loading" style={{ minHeight: '200px' }}>
@@ -148,39 +159,30 @@ export default function CompositionsTab({
 
   return (
     <>
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <h3 className="card-title" style={{ marginBottom: '0.75rem' }}>
-          <i className="bi bi-layers" style={{ marginRight: '0.75rem', color: 'var(--primary-color)' }}></i>
-          MCP Server Composition
-        </h3>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Compose multiple MCP servers into a single unified interface. This enables complex AI workflows that span multiple services.
-        </p>
-        <div
-          style={{
-            background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.15), rgba(56, 189, 248, 0.08))',
-            border: '1px solid rgba(129, 140, 248, 0.3)',
-            borderRadius: '8px',
-            padding: '1rem',
-          }}
-        >
-          <h4 style={{ fontSize: '0.875rem', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
-            <i className="bi bi-diagram-3" style={{ marginRight: '0.5rem', color: 'var(--secondary-color)' }}></i>
-            Example: Sales Agent Composition
-          </h4>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.5rem', alignItems: 'center' }}>
-            <span className="badge badge-primary">Stripe MCP</span>
-            <span style={{ color: 'var(--text-secondary)' }}>+</span>
-            <span className="badge badge-primary">Salesforce MCP</span>
-            <span style={{ color: 'var(--text-secondary)' }}>+</span>
-            <span className="badge badge-primary">Slack MCP</span>
-            <span style={{ color: 'var(--text-secondary)' }}>=</span>
-            <span className="badge badge-success">Sales Agent MCP</span>
+      <div className="card page-quick-actions-card" style={{ marginBottom: '1rem' }}>
+        <div className="page-quick-actions-head">
+          <div>
+            <h3 className="card-title" style={{ margin: 0 }}>Composition quick start</h3>
+            <p className="page-quick-actions-subtitle">Combine multiple servers into one deployable MCP endpoint.</p>
           </div>
-          <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0 }}>
-            AI workflow: Find lead (Salesforce) → Create invoice (Stripe) → Notify team (Slack)
-          </p>
+          <button type="button" className="btn btn-primary" onClick={() => setShowFormModal(true)}>
+            <i className="bi bi-plus-lg"></i>
+            New Composition
+          </button>
         </div>
+        {compositions.length > 0 && (
+          <div className="page-quick-actions-toolbar">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Search</label>
+              <input
+                className="form-control"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search compositions"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {compositions.length === 0 && !showFormModal ? (
@@ -195,7 +197,7 @@ export default function CompositionsTab({
         </div>
       ) : (
         <div className="server-grid">
-          {compositions.map((composition) => (
+          {filteredCompositions.map((composition) => (
             <div className="card" key={composition.id}>
               <div className="card-header">
                 <div>
@@ -248,12 +250,21 @@ export default function CompositionsTab({
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleEdit(composition)}>
                   <i className="bi bi-pencil"></i>
                 </button>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleDelete(composition.id)}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setDeleteCompositionId(composition.id)}>
                   <i className="bi bi-trash"></i>
                 </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {compositions.length > 0 && filteredCompositions.length === 0 && (
+        <div className="empty-state">
+          <i className="bi bi-search"></i>
+          <h3>No compositions match your search</h3>
+          <p>Try a different name or clear the filter.</p>
+          <button className="btn btn-secondary" onClick={() => setSearchQuery('')}>Clear search</button>
         </div>
       )}
 
@@ -365,6 +376,19 @@ export default function CompositionsTab({
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={!!deleteCompositionId}
+        title="Delete composition?"
+        message="This removes the composition definition. Deployed runtime sessions can be managed from Observability."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setDeleteCompositionId(null)}
+        onConfirm={async () => {
+          if (!deleteCompositionId) return;
+          await handleDelete(deleteCompositionId);
+          setDeleteCompositionId(null);
+        }}
+      />
     </>
   );
 }

@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import Editor from '@monaco-editor/react';
 import type { Tool, Policy, PolicyRule, PolicyRuleType } from '../types';
 import { createPolicy, getToolPolicies, deletePolicy } from '../services/api';
+import ConfirmModal from './ConfirmModal';
 
 interface Props {
   tools: Tool[];
@@ -155,6 +156,7 @@ export default function PolicyEditor({ tools, initialToolId, onPolicyUpdated }: 
   const [policyDescription, setPolicyDescription] = useState('');
   const [rules, setRules] = useState<{ type: PolicyRuleType; config: string; failAction: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [deletePolicyId, setDeletePolicyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialToolId && tools.some((t) => t.id === initialToolId)) {
@@ -244,7 +246,6 @@ export default function PolicyEditor({ tools, initialToolId, onPolicyUpdated }: 
   };
 
   const handleDeletePolicy = async (policyId: string) => {
-    if (!confirm('Delete this policy?')) return;
     try {
       await deletePolicy(policyId);
       toast.success('Policy deleted');
@@ -567,7 +568,7 @@ export default function PolicyEditor({ tools, initialToolId, onPolicyUpdated }: 
                   </button>
                   <button 
                     className="btn btn-icon btn-secondary btn-sm"
-                    onClick={() => handleDeletePolicy(policy.id)}
+                    onClick={() => setDeletePolicyId(policy.id)}
                     data-tooltip="Delete"
                   >
                     <i className="bi bi-trash"></i>
@@ -634,6 +635,19 @@ export default function PolicyEditor({ tools, initialToolId, onPolicyUpdated }: 
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={!!deletePolicyId}
+        title="Delete policy?"
+        message="This policy and all its rules will be removed."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setDeletePolicyId(null)}
+        onConfirm={async () => {
+          if (!deletePolicyId) return;
+          await handleDeletePolicy(deletePolicyId);
+          setDeletePolicyId(null);
+        }}
+      />
     </div>
   );
 }

@@ -212,6 +212,14 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS owner_id UUID`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT false`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS downloads INTEGER DEFAULT 0`,
+		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS hosted_virtual BOOLEAN NOT NULL DEFAULT false`,
+		`UPDATE servers
+		 SET hosted_virtual = true
+		 WHERE hosted_virtual = false
+		   AND owner_id IS NOT NULL
+		   AND is_public = false
+		   AND status = 'draft'
+		   AND (name LIKE '% (Marketplace)' OR name LIKE '% (Composition)')`,
 		`CREATE TABLE IF NOT EXISTS server_versions (
 			id UUID PRIMARY KEY,
 			server_id UUID REFERENCES servers(id) ON DELETE CASCADE,
@@ -315,27 +323,34 @@ func (db *DB) EnsureHostedVirtualServer(ctx context.Context, id, ownerID, name, 
 		return nil, err
 	}
 	if existing != nil {
+		if !existing.HostedVirtual {
+			if _, err := db.pool.Exec(ctx, `UPDATE servers SET hosted_virtual = true, updated_at = NOW() WHERE id = $1`, id); err != nil {
+				return nil, fmt.Errorf("marking hosted virtual server: %w", err)
+			}
+			existing.HostedVirtual = true
+		}
 		return existing, nil
 	}
 
 	server := &models.Server{
-		ID:          id,
-		Name:        name,
-		Description: description,
-		Version:     "1.0.0",
-		Icon:        "bi-server",
-		Status:      models.ServerStatusDraft,
-		OwnerID:     ownerID,
-		IsPublic:    false,
-		Downloads:   0,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:            id,
+		Name:          name,
+		Description:   description,
+		Version:       "1.0.0",
+		Icon:          "bi-server",
+		Status:        models.ServerStatusDraft,
+		OwnerID:       ownerID,
+		IsPublic:      false,
+		Downloads:     0,
+		HostedVirtual: true,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
 	}
 
 	_, err = db.pool.Exec(ctx,
-		`INSERT INTO servers (id, name, description, version, icon, status, owner_id, is_public, downloads, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		server.ID, server.Name, server.Description, server.Version, server.Icon, server.Status, nullIfEmpty(server.OwnerID), server.IsPublic, server.Downloads, server.CreatedAt, server.UpdatedAt)
+		`INSERT INTO servers (id, name, description, version, icon, status, owner_id, is_public, downloads, hosted_virtual, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		server.ID, server.Name, server.Description, server.Version, server.Icon, server.Status, nullIfEmpty(server.OwnerID), server.IsPublic, server.Downloads, server.HostedVirtual, server.CreatedAt, server.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("inserting hosted virtual server: %w", err)
 	}
@@ -349,13 +364,14 @@ func (db *DB) GetServer(ctx context.Context, id string) (*models.Server, error) 
 	var publishedAt *time.Time
 	var isPublic *bool
 	var downloads *int
+	var hostedVirtual *bool
 
 	var obsKey *string
 	var envProfiles []byte
 	err := db.pool.QueryRow(ctx,
-		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, auth_config, observability_reporting_key, env_profiles, created_at, updated_at 
+		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, hosted_virtual, auth_config, observability_reporting_key, env_profiles, created_at, updated_at
 		 FROM servers WHERE id = $1`, id).
-		Scan(&server.ID, &server.Name, &server.Description, &server.Version, &icon, &status, &publishedAt, &latestVersion, &ownerID, &isPublic, &downloads, &authConfig, &obsKey, &envProfiles, &server.CreatedAt, &server.UpdatedAt)
+		Scan(&server.ID, &server.Name, &server.Description, &server.Version, &icon, &status, &publishedAt, &latestVersion, &ownerID, &isPublic, &downloads, &hostedVirtual, &authConfig, &obsKey, &envProfiles, &server.CreatedAt, &server.UpdatedAt)
 
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -388,6 +404,9 @@ func (db *DB) GetServer(ctx context.Context, id string) (*models.Server, error) 
 	}
 	if downloads != nil {
 		server.Downloads = *downloads
+	}
+	if hostedVirtual != nil {
+		server.HostedVirtual = *hostedVirtual
 	}
 
 	if authConfig != nil {
@@ -427,8 +446,12 @@ func (db *DB) ListServers(ctx context.Context, ownerID string) ([]models.Server,
 	}
 	// Compare as text so owner_id filter is exact; only return rows owned by this user
 	rows, err := db.pool.Query(ctx,
-		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, created_at, updated_at 
-		 FROM servers WHERE owner_id IS NOT NULL AND owner_id::text = $1 ORDER BY updated_at DESC`,
+		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, hosted_virtual, created_at, updated_at
+		 FROM servers
+		 WHERE owner_id IS NOT NULL
+		   AND owner_id::text = $1
+		   AND hosted_virtual = false
+		 ORDER BY updated_at DESC`,
 		ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("querying servers: %w", err)
@@ -442,7 +465,8 @@ func (db *DB) ListServers(ctx context.Context, ownerID string) ([]models.Server,
 		var publishedAt *time.Time
 		var isPublic *bool
 		var downloads *int
-		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.Version, &icon, &status, &publishedAt, &latestVersion, &oid, &isPublic, &downloads, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var hostedVirtual *bool
+		if err := rows.Scan(&s.ID, &s.Name, &s.Description, &s.Version, &icon, &status, &publishedAt, &latestVersion, &oid, &isPublic, &downloads, &hostedVirtual, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning server: %w", err)
 		}
 		if icon != nil {
@@ -470,11 +494,35 @@ func (db *DB) ListServers(ctx context.Context, ownerID string) ([]models.Server,
 		if downloads != nil {
 			s.Downloads = *downloads
 		}
+		if hostedVirtual != nil {
+			s.HostedVirtual = *hostedVirtual
+		}
 		servers = append(servers, s)
 	}
 
+	// Annotate hosted running state in one query to avoid per-server calls.
+	runningByServer := make(map[string]bool)
+	sessionRows, err := db.pool.Query(ctx,
+		`SELECT server_id FROM hosted_sessions
+		 WHERE user_id::text = $1 AND status = 'running'`,
+		ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("querying hosted sessions: %w", err)
+	}
+	for sessionRows.Next() {
+		var sid string
+		if err := sessionRows.Scan(&sid); err != nil {
+			sessionRows.Close()
+			return nil, fmt.Errorf("scanning hosted session: %w", err)
+		}
+		runningByServer[sid] = true
+	}
+	sessionRows.Close()
+
 	// Fetch tools, resources, and prompts for each server
 	for i := range servers {
+		servers[i].HostedRunning = runningByServer[servers[i].ID]
+
 		tools, err := db.GetToolsByServer(ctx, servers[i].ID)
 		if err != nil {
 			return nil, fmt.Errorf("getting tools for server %s: %w", servers[i].ID, err)

@@ -32,6 +32,7 @@ export interface Server {
   owner_id?: string;
   is_public: boolean;
   downloads: number;
+  hosted_running?: boolean;
   security_score?: number;
   security_grade?: string;
   observability_reporting_key?: string;

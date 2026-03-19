@@ -142,9 +142,9 @@ export default function Observability() {
         </button>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
+      <div className="card observability-filters-card" style={{ marginBottom: '1.5rem' }}>
         <h3 className="card-title" style={{ marginBottom: '0.75rem' }}>Filters</h3>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' }}>
+        <div className="observability-filters-row">
           <div>
             <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Server</label>
             <select
@@ -265,13 +265,13 @@ export default function Observability() {
                         <td>{e.duration_ms} ms</td>
                         <td>
                           {e.success ? (
-                            <span style={{ color: 'var(--success)' }}><i className="bi bi-check-circle" /> OK</span>
+                            <span className="observability-status ok"><i className="bi bi-check-circle" /> OK</span>
                           ) : (
-                            <span style={{ color: 'var(--danger)' }}><i className="bi bi-x-circle" /> Failed</span>
+                            <span className="observability-status failed"><i className="bi bi-x-circle" /> Failed</span>
                           )}
                         </td>
                         <td style={{ fontSize: '0.85rem' }}>
-                          {e.error && <span style={{ color: 'var(--danger)' }}>{e.error}</span>}
+                          {e.error && <span style={{ color: 'var(--danger-color)' }}>{e.error}</span>}
                           {e.repair_suggestion && (
                             <div style={{ marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
                               <i className="bi bi-lightbulb" /> {e.repair_suggestion}
@@ -329,7 +329,7 @@ export default function Observability() {
           )}
 
           {data.repair_suggestions?.length > 0 && (
-            <div className="card">
+            <div className="card observability-sessions-modal-card">
               <h4 className="card-title" style={{ marginBottom: '0.75rem' }}>
                 <i className="bi bi-lightbulb" style={{ marginRight: '0.5rem' }}></i>
                 Repair suggestions
@@ -423,7 +423,7 @@ export default function Observability() {
                             <td>{formatTime(s.started_at)}</td>
                             <td>{formatTime(s.last_used_at)}</td>
                             <td>
-                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                              <div className="observability-session-actions">
                                 <button
                                   className="btn btn-secondary"
                                   disabled={!!busy}
