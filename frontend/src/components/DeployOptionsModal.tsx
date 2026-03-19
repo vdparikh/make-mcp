@@ -131,7 +131,7 @@ export default function DeployOptionsModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '80%', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content deploy-options-modal" style={{ maxWidth: '80%', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">
             <i className="bi bi-rocket-takeoff" style={{ marginRight: '0.5rem' }} />
@@ -165,7 +165,7 @@ export default function DeployOptionsModal({
                 For marketplace and compositions, hosted deploy uses managed runtime settings; ZIP deploy keeps runtime configurable via env.
               </p>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem' }}>
+            <div className="deploy-option-grid">
             {[
               { id: 'hosted' as const, title: 'Publish MCP', subtitle: 'Hosted at URL', icon: 'bi-globe', color: '#8b5cf6' },
               { id: 'nodejs' as const, title: 'Node.js', subtitle: 'Download & run locally', icon: 'bi-filetype-js', color: 'var(--primary-color)' },
@@ -177,7 +177,9 @@ export default function DeployOptionsModal({
                 key={opt.id}
                 type="button"
                 onClick={() => setSelectedDeploy(opt.id)}
+                className={`deploy-option-card ${selectedDeploy === opt.id ? 'selected' : ''}`}
                 style={{
+                  ['--deploy-color' as string]: opt.color,
                   padding: '1.5rem',
                   background:
                     selectedDeploy === opt.id
@@ -197,7 +199,7 @@ export default function DeployOptionsModal({
                   textAlign: 'center',
                 }}
               >
-                <div style={{ fontSize: '2.2rem', marginBottom: '0.75rem', color: selectedDeploy === opt.id ? opt.color : 'var(--text-secondary)' }}>
+                <div className="deploy-option-icon" style={{ color: selectedDeploy === opt.id ? opt.color : 'var(--text-secondary)' }}>
                   <i className={`bi ${opt.icon}`} />
                 </div>
                 <h4 style={{ marginBottom: '0.25rem', color: 'var(--text-primary)', fontSize: '1rem' }}>{opt.title}</h4>
@@ -218,19 +220,20 @@ export default function DeployOptionsModal({
                   <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.75rem' }}>
                     Publish this {artifactLabel} to the platform. It will be available at a URL you can add to Cursor/Claude Desktop.
                   </p>
-                  <div style={{ marginBottom: '0.75rem', padding: '0.75rem', borderRadius: '8px', background: 'var(--hover-bg)' }}>
+                  <div className={`hosted-status-banner ${hostedStatusLoading ? 'loading' : hostedResult?.running ? 'running' : 'idle'}`}>
                     {hostedStatusLoading ? (
-                      <span style={{ color: 'var(--text-muted)' }}>
+                      <span>
                         <i className="bi bi-arrow-repeat" style={{ marginRight: '0.5rem' }} />
                         Checking hosted runtime status...
                       </span>
                     ) : hostedResult?.running ? (
-                      <span style={{ color: 'var(--success-color)' }}>
+                      <span>
+                        <span className="hosted-running-dot" />
                         <i className="bi bi-check-circle" style={{ marginRight: '0.5rem' }} />
                         Already running.
                       </span>
                     ) : (
-                      <span style={{ color: 'var(--text-muted)' }}>
+                      <span>
                         <i className="bi bi-info-circle" style={{ marginRight: '0.5rem' }} />
                         No hosted runtime currently running.
                       </span>

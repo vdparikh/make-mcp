@@ -32,6 +32,7 @@ import PolicyEditor from '../components/PolicyEditor';
 import TestPlayground from '../components/TestPlayground';
 import HealingDashboard from '../components/HealingDashboard';
 import { useTryChat } from '../contexts/TryChatContext';
+import ConfirmModal from '../components/ConfirmModal';
 
 type TabType = 'general' | 'environments' | 'tools' | 'resources' | 'prompts' | 'context' | 'policies' | 'security' | 'testing' | 'healing' | 'observability' | 'deploy' | 'versions';
 
@@ -330,6 +331,10 @@ export default function ServerEditor() {
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [preselectedToolId, setPreselectedToolId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: 'tool' | 'resource' | 'prompt' | 'context';
+    id: string;
+  } | null>(null);
 
   // Clear tree selection when switching away from that section
   useEffect(() => {
@@ -580,8 +585,7 @@ export default function ServerEditor() {
     }
   };
 
-  const handleDeleteTool = async (toolId: string) => {
-    if (!confirm('Delete this tool?')) return;
+  const deleteToolNow = async (toolId: string) => {
     try {
       await deleteTool(toolId);
       toast.success('Tool deleted');
@@ -591,8 +595,7 @@ export default function ServerEditor() {
     }
   };
 
-  const handleDeleteResource = async (resourceId: string) => {
-    if (!confirm('Delete this resource?')) return;
+  const deleteResourceNow = async (resourceId: string) => {
     try {
       await deleteResource(resourceId);
       toast.success('Resource deleted');
@@ -602,8 +605,7 @@ export default function ServerEditor() {
     }
   };
 
-  const handleDeletePrompt = async (promptId: string) => {
-    if (!confirm('Delete this prompt?')) return;
+  const deletePromptNow = async (promptId: string) => {
     try {
       await deletePrompt(promptId);
       toast.success('Prompt deleted');
@@ -613,8 +615,7 @@ export default function ServerEditor() {
     }
   };
 
-  const handleDeleteContextConfig = async (configId: string) => {
-    if (!confirm('Delete this context configuration?')) return;
+  const deleteContextConfigNow = async (configId: string) => {
     try {
       await deleteContextConfig(configId);
       toast.success('Context configuration deleted');
@@ -623,6 +624,11 @@ export default function ServerEditor() {
       toast.error('Failed to delete context configuration');
     }
   };
+
+  const handleDeleteTool = (toolId: string) => setDeleteTarget({ type: 'tool', id: toolId });
+  const handleDeleteResource = (resourceId: string) => setDeleteTarget({ type: 'resource', id: resourceId });
+  const handleDeletePrompt = (promptId: string) => setDeleteTarget({ type: 'prompt', id: promptId });
+  const handleDeleteContextConfig = (configId: string) => setDeleteTarget({ type: 'context', id: configId });
 
   if (loading) {
     return (
@@ -686,7 +692,7 @@ export default function ServerEditor() {
             )}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
+        <div className="server-editor-header-actions">
           <button
             className="btn btn-secondary"
             onClick={() => openTryChat({ type: 'server', id: server.id, name: server.name })}
@@ -702,21 +708,11 @@ export default function ServerEditor() {
             Publish
           </button>
           <button 
-            className="btn btn-success" 
+            className={`btn btn-success server-editor-deploy-btn ${hostedRuntime?.running ? 'running' : ''}`}
             onClick={() => { setShowDeployModal(true); setSelectedDeploy('hosted'); }}
           >
             {hostedRuntime?.running && (
-              <span
-                style={{
-                  display: 'inline-block',
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: '#fff',
-                  marginRight: '0.5rem',
-                  verticalAlign: 'middle',
-                }}
-              />
+              <span className="server-editor-deploy-dot" />
             )}
             <i className="bi bi-rocket-takeoff"></i>
             Deploy
@@ -724,17 +720,17 @@ export default function ServerEditor() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0,1fr)', gap: '1.5rem', alignItems: 'flex-start' }}>
-        <div className="card" style={{ padding: '1rem', position: 'sticky', top: 0 }}>
-          <h3 className="card-title" style={{ marginBottom: '0.75rem', fontSize: '0.95rem' }}>
-            <i className="bi bi-diagram-3" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
+      <div className="server-editor-layout">
+        <div className="card server-nav-card">
+          <h3 className="card-title server-nav-title">
+            <i className="bi bi-diagram-3 server-nav-title-icon"></i>
             Server navigation
           </h3>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+          <p className="server-nav-subtitle">
             Focused view for <strong>{server.name}</strong>. Pick a section to configure this MCP server.
           </p>
-          <div style={{ borderTop: '1px solid var(--card-border)', margin: '0.5rem 0 0.75rem 0' }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div className="server-nav-divider" />
+          <div className="server-nav-list">
             {tabs.map((tab) => {
               const isTreeSection = tab.id === 'tools' || tab.id === 'resources' || tab.id === 'prompts';
               const isActive = activeTab === tab.id;
@@ -766,45 +762,19 @@ export default function ServerEditor() {
                   <button
                     type="button"
                     onClick={() => setActiveTab(tab.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      width: '100%',
-                      borderRadius: '8px',
-                      border: 'none',
-                      padding: '0.45rem 0.6rem',
-                      background: isActive ? 'var(--primary-light)' : 'transparent',
-                      color: 'var(--text-primary)',
-                      cursor: 'pointer',
-                      fontSize: '0.82rem',
-                      textAlign: 'left',
-                      transition: 'background 0.15s',
-                    }}
+                    className={`server-nav-tab ${isActive ? 'active' : ''}`}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span className="server-nav-tab-left">
                       {isTreeSection && count > 0 && (
                         <i
-                          className={`bi ${expanded ? 'bi-caret-down-fill' : 'bi-caret-right-fill'}`}
-                          style={{ fontSize: '0.6rem' }}
+                          className={`bi ${expanded ? 'bi-caret-down-fill' : 'bi-caret-right-fill'} server-nav-caret`}
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleExpanded();
                           }}
                         ></i>
                       )}
-                      {!isTreeSection && (
-                        <i
-                          className={`bi ${tab.icon}`}
-                          style={{ color: isActive ? 'var(--primary-color)' : 'var(--text-secondary)' }}
-                        ></i>
-                      )}
-                      {isTreeSection && (
-                        <i
-                          className={`bi ${tab.icon}`}
-                          style={{ color: isActive ? 'var(--primary-color)' : 'var(--text-secondary)' }}
-                        ></i>
-                      )}
+                      <i className={`bi ${tab.icon} server-nav-icon`}></i>
                       {tab.label}
                     </span>
                     {isTreeSection && count > 0 && (
@@ -815,7 +785,7 @@ export default function ServerEditor() {
                   </button>
 
                   {isTreeSection && expanded && count > 0 && (
-                    <div style={{ marginTop: '0.1rem', marginLeft: '1.5rem' }}>
+                    <div className="server-nav-children">
                       {tab.id === 'tools' &&
                         server.tools?.map((tool) => (
                           <button
@@ -825,18 +795,7 @@ export default function ServerEditor() {
                               setFocusedToolId(tool.id);
                               setActiveTab('tools');
                             }}
-                            style={{
-                              display: 'block',
-                              width: '100%',
-                              textAlign: 'left',
-                              border: 'none',
-                              background: focusedToolId === tool.id ? 'var(--primary-light)' : 'transparent',
-                              padding: '0.15rem 0.25rem',
-                              borderRadius: '4px',
-                              fontSize: '0.78rem',
-                              color: focusedToolId === tool.id ? 'var(--primary-color)' : 'var(--text-secondary)',
-                              cursor: 'pointer',
-                            }}
+                            className={`server-nav-child ${focusedToolId === tool.id ? 'active' : ''}`}
                           >
                             {tool.name}
                           </button>
@@ -850,18 +809,7 @@ export default function ServerEditor() {
                               setSelectedResourceId(r.id);
                               setActiveTab('resources');
                             }}
-                            style={{
-                              display: 'block',
-                              width: '100%',
-                              textAlign: 'left',
-                              border: 'none',
-                              background: selectedResourceId === r.id ? 'var(--primary-light)' : 'transparent',
-                              padding: '0.15rem 0.25rem',
-                              borderRadius: '4px',
-                              fontSize: '0.78rem',
-                              color: selectedResourceId === r.id ? 'var(--primary-color)' : 'var(--text-secondary)',
-                              cursor: 'pointer',
-                            }}
+                            className={`server-nav-child ${selectedResourceId === r.id ? 'active' : ''}`}
                           >
                             {r.name}
                           </button>
@@ -875,18 +823,7 @@ export default function ServerEditor() {
                               setSelectedPromptId(p.id);
                               setActiveTab('prompts');
                             }}
-                            style={{
-                              display: 'block',
-                              width: '100%',
-                              textAlign: 'left',
-                              border: 'none',
-                              background: selectedPromptId === p.id ? 'var(--primary-light)' : 'transparent',
-                              padding: '0.15rem 0.25rem',
-                              borderRadius: '4px',
-                              fontSize: '0.78rem',
-                              color: selectedPromptId === p.id ? 'var(--primary-color)' : 'var(--text-secondary)',
-                              cursor: 'pointer',
-                            }}
+                            className={`server-nav-child ${selectedPromptId === p.id ? 'active' : ''}`}
                           >
                             {p.name}
                           </button>
@@ -2288,6 +2225,31 @@ docker run -it --rm \\
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete item?"
+        message={
+          deleteTarget?.type === 'tool'
+            ? 'This permanently removes this tool.'
+            : deleteTarget?.type === 'resource'
+              ? 'This permanently removes this resource.'
+              : deleteTarget?.type === 'prompt'
+                ? 'This permanently removes this prompt.'
+                : 'This permanently removes this context configuration.'
+        }
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          const target = deleteTarget;
+          setDeleteTarget(null);
+          if (target.type === 'tool') await deleteToolNow(target.id);
+          else if (target.type === 'resource') await deleteResourceNow(target.id);
+          else if (target.type === 'prompt') await deletePromptNow(target.id);
+          else await deleteContextConfigNow(target.id);
+        }}
+      />
     </div>
   );
 }

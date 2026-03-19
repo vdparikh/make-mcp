@@ -16,34 +16,36 @@ const (
 
 // Server represents an MCP server configuration
 type Server struct {
-	ID             string          `json:"id"`
-	Name           string          `json:"name"`
-	Description    string          `json:"description"`
-	Version        string          `json:"version"`
-	Icon           string          `json:"icon,omitempty"`
-	Status         ServerStatus    `json:"status"`
-	PublishedAt    *time.Time      `json:"published_at,omitempty"`
-	LatestVersion  string          `json:"latest_version,omitempty"`
-	OwnerID        string          `json:"owner_id,omitempty"`
-	IsPublic       bool            `json:"is_public"`
-	Downloads      int             `json:"downloads"`
-	SecurityScore            *int    `json:"security_score,omitempty"`  // 0-100, set for marketplace list/detail
-	SecurityGrade            *string `json:"security_grade,omitempty"`  // A/B/C/D/F
-	ObservabilityReportingKey string `json:"observability_reporting_key,omitempty"` // key for runtime to report events
-	CreatedAt                time.Time `json:"created_at"`
-	UpdatedAt                time.Time `json:"updated_at"`
-	Tools          []Tool          `json:"tools,omitempty"`
-	Resources      []Resource      `json:"resources,omitempty"`
-	Prompts        []Prompt        `json:"prompts,omitempty"`
-	AuthConfig     json.RawMessage `json:"auth_config,omitempty"`
-	EnvProfiles    json.RawMessage `json:"env_profiles,omitempty"` // Dev/Staging/Prod: base_url, db_url, env vars
+	ID                        string          `json:"id"`
+	Name                      string          `json:"name"`
+	Description               string          `json:"description"`
+	Version                   string          `json:"version"`
+	Icon                      string          `json:"icon,omitempty"`
+	Status                    ServerStatus    `json:"status"`
+	PublishedAt               *time.Time      `json:"published_at,omitempty"`
+	LatestVersion             string          `json:"latest_version,omitempty"`
+	OwnerID                   string          `json:"owner_id,omitempty"`
+	IsPublic                  bool            `json:"is_public"`
+	Downloads                 int             `json:"downloads"`
+	HostedRunning             bool            `json:"hosted_running"`
+	HostedVirtual             bool            `json:"hosted_virtual,omitempty"`
+	SecurityScore             *int            `json:"security_score,omitempty"`              // 0-100, set for marketplace list/detail
+	SecurityGrade             *string         `json:"security_grade,omitempty"`              // A/B/C/D/F
+	ObservabilityReportingKey string          `json:"observability_reporting_key,omitempty"` // key for runtime to report events
+	CreatedAt                 time.Time       `json:"created_at"`
+	UpdatedAt                 time.Time       `json:"updated_at"`
+	Tools                     []Tool          `json:"tools,omitempty"`
+	Resources                 []Resource      `json:"resources,omitempty"`
+	Prompts                   []Prompt        `json:"prompts,omitempty"`
+	AuthConfig                json.RawMessage `json:"auth_config,omitempty"`
+	EnvProfiles               json.RawMessage `json:"env_profiles,omitempty"` // Dev/Staging/Prod: base_url, db_url, env vars
 }
 
 // EnvProfile is one environment profile (dev, staging, prod) for a server.
 type EnvProfile struct {
 	BaseURL string            `json:"base_url,omitempty"` // For rest_api/graphql/webhook tools
 	DBURL   string            `json:"db_url,omitempty"`   // For database tools
-	Env     map[string]string `json:"env,omitempty"`     // Additional env vars (documentation / codegen)
+	Env     map[string]string `json:"env,omitempty"`      // Additional env vars (documentation / codegen)
 }
 
 // ServerVersion represents a published snapshot of a server
@@ -142,24 +144,24 @@ type ContextConfig struct {
 type PolicyRuleType string
 
 const (
-	PolicyRuleApproval   PolicyRuleType = "approval_required"
-	PolicyRuleMaxValue   PolicyRuleType = "max_value"
+	PolicyRuleApproval     PolicyRuleType = "approval_required"
+	PolicyRuleMaxValue     PolicyRuleType = "max_value"
 	PolicyRuleAllowedRoles PolicyRuleType = "allowed_roles"
-	PolicyRuleTimeWindow PolicyRuleType = "time_window"
-	PolicyRuleRateLimit  PolicyRuleType = "rate_limit"
-	PolicyRuleCustom     PolicyRuleType = "custom"
+	PolicyRuleTimeWindow   PolicyRuleType = "time_window"
+	PolicyRuleRateLimit    PolicyRuleType = "rate_limit"
+	PolicyRuleCustom       PolicyRuleType = "custom"
 )
 
 // Policy represents an AI governance policy for tools
 type Policy struct {
-	ID          string          `json:"id"`
-	ToolID      string          `json:"tool_id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Rules       []PolicyRule    `json:"rules"`
-	Enabled     bool            `json:"enabled"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID          string       `json:"id"`
+	ToolID      string       `json:"tool_id"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Rules       []PolicyRule `json:"rules"`
+	Enabled     bool         `json:"enabled"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
 }
 
 // PolicyRule defines a single governance rule
@@ -189,11 +191,11 @@ type ToolExecution struct {
 	ID               string          `json:"id"`
 	ToolID           string          `json:"tool_id"`
 	ServerID         string          `json:"server_id"`
-	ToolName         string          `json:"tool_name,omitempty"`   // set for runtime-reported events
-	Source           string          `json:"source,omitempty"`     // "playground" | "runtime"
-	ClientUserID     string          `json:"client_user_id,omitempty"`   // optional: end-user/tenant identifier
-	ClientAgent      string          `json:"client_agent,omitempty"`    // optional: e.g. "Cursor", "Claude Desktop"
-	ClientToken      string          `json:"client_token,omitempty"`    // optional: API key/token for correlation
+	ToolName         string          `json:"tool_name,omitempty"`      // set for runtime-reported events
+	Source           string          `json:"source,omitempty"`         // "playground" | "runtime"
+	ClientUserID     string          `json:"client_user_id,omitempty"` // optional: end-user/tenant identifier
+	ClientAgent      string          `json:"client_agent,omitempty"`   // optional: e.g. "Cursor", "Claude Desktop"
+	ClientToken      string          `json:"client_token,omitempty"`   // optional: API key/token for correlation
 	Input            json.RawMessage `json:"input,omitempty"`
 	Output           json.RawMessage `json:"output,omitempty"`
 	Error            string          `json:"error,omitempty"`
@@ -213,8 +215,8 @@ type HostedSession struct {
 	SnapshotVersion string     `json:"snapshot_version,omitempty"`
 	ContainerID     string     `json:"container_id,omitempty"`
 	HostPort        string     `json:"host_port,omitempty"`
-	Status          string     `json:"status"`        // running|starting|stopped|error
-	Health          string     `json:"health"`        // healthy|unhealthy|unknown
+	Status          string     `json:"status"` // running|starting|stopped|error
+	Health          string     `json:"health"` // healthy|unhealthy|unknown
 	LastUsedAt      *time.Time `json:"last_used_at,omitempty"`
 	LastEnsuredAt   *time.Time `json:"last_ensured_at,omitempty"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
@@ -238,11 +240,11 @@ type HealingSuggestion struct {
 
 // ServerComposition represents composed MCP servers
 type ServerComposition struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	ServerIDs   []string `json:"server_ids"`
-	OwnerID     string   `json:"owner_id,omitempty"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	ServerIDs   []string  `json:"server_ids"`
+	OwnerID     string    `json:"owner_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -308,8 +310,8 @@ type TestToolResponse struct {
 }
 
 type PolicyEvaluationResult struct {
-	Allowed     bool     `json:"allowed"`
-	Reason      string   `json:"reason,omitempty"`
+	Allowed       bool     `json:"allowed"`
+	Reason        string   `json:"reason,omitempty"`
 	ViolatedRules []string `json:"violated_rules,omitempty"`
 }
 
@@ -370,11 +372,11 @@ type FlowExecutionRequest struct {
 }
 
 type FlowExecutionResponse struct {
-	Success    bool              `json:"success"`
-	Output     json.RawMessage   `json:"output,omitempty"`
-	Error      string            `json:"error,omitempty"`
-	Duration   int64             `json:"duration_ms"`
-	NodeResults []NodeResult     `json:"node_results,omitempty"`
+	Success     bool            `json:"success"`
+	Output      json.RawMessage `json:"output,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	Duration    int64           `json:"duration_ms"`
+	NodeResults []NodeResult    `json:"node_results,omitempty"`
 }
 
 type NodeResult struct {
@@ -429,22 +431,22 @@ type ObservabilityEventPayload struct {
 	// Optional: identify who and which client the call came from (when many users use the same MCP)
 	ClientUserID string `json:"client_user_id,omitempty"` // end-user or tenant identifier
 	ClientAgent  string `json:"client_agent,omitempty"`   // e.g. "Cursor", "Claude Desktop", "VS Code"
-	ClientToken  string `json:"client_token,omitempty"`    // optional API key/token for correlation
+	ClientToken  string `json:"client_token,omitempty"`   // optional API key/token for correlation
 }
 
 type ObservabilityEventsRequest struct {
-	Key    string                    `json:"key" binding:"required"` // observability_reporting_key
+	Key    string                      `json:"key" binding:"required"` // observability_reporting_key
 	Events []ObservabilityEventPayload `json:"events" binding:"required"`
 }
 
 // ObservabilitySummaryResponse for the server observability tab (enable reporting + env vars)
 type ObservabilitySummaryResponse struct {
-	ReportingKey       string                 `json:"reporting_key,omitempty"`
-	EndpointURL        string                 `json:"endpoint_url,omitempty"`
-	RecentEvents       []ToolExecution        `json:"recent_events"`
-	LatencyByTool      []ToolLatencyStat      `json:"latency_by_tool"`
-	FailuresByTool     []ToolFailureStat      `json:"failures_by_tool"`
-	RepairSuggestions  []RepairSuggestionItem `json:"repair_suggestions"`
+	ReportingKey      string                 `json:"reporting_key,omitempty"`
+	EndpointURL       string                 `json:"endpoint_url,omitempty"`
+	RecentEvents      []ToolExecution        `json:"recent_events"`
+	LatencyByTool     []ToolLatencyStat      `json:"latency_by_tool"`
+	FailuresByTool    []ToolFailureStat      `json:"failures_by_tool"`
+	RepairSuggestions []RepairSuggestionItem `json:"repair_suggestions"`
 }
 
 // ServerSummary for filter dropdowns
@@ -455,25 +457,25 @@ type ServerSummary struct {
 
 // ObservabilityDashboardResponse for the global Observability page (filter by server, tool)
 type ObservabilityDashboardResponse struct {
-	Servers            []ServerSummary       `json:"servers"`
-	RecentEvents        []ToolExecution       `json:"recent_events"`
-	LatencyByTool       []ToolLatencyStat    `json:"latency_by_tool"`
-	FailuresByTool      []ToolFailureStat    `json:"failures_by_tool"`
-	RepairSuggestions   []RepairSuggestionItem `json:"repair_suggestions"`
+	Servers           []ServerSummary        `json:"servers"`
+	RecentEvents      []ToolExecution        `json:"recent_events"`
+	LatencyByTool     []ToolLatencyStat      `json:"latency_by_tool"`
+	FailuresByTool    []ToolFailureStat      `json:"failures_by_tool"`
+	RepairSuggestions []RepairSuggestionItem `json:"repair_suggestions"`
 }
 
 type ToolLatencyStat struct {
-	ToolName  string  `json:"tool_name"`
-	ToolID    string  `json:"tool_id"`
-	Count     int     `json:"count"`
-	AvgMs     float64 `json:"avg_ms"`
-	P95Ms     int64   `json:"p95_ms"`
+	ToolName string  `json:"tool_name"`
+	ToolID   string  `json:"tool_id"`
+	Count    int     `json:"count"`
+	AvgMs    float64 `json:"avg_ms"`
+	P95Ms    int64   `json:"p95_ms"`
 }
 
 type ToolFailureStat struct {
-	ToolName string `json:"tool_name"`
-	ToolID   string `json:"tool_id"`
-	Count    int    `json:"count"`
+	ToolName  string `json:"tool_name"`
+	ToolID    string `json:"tool_id"`
+	Count     int    `json:"count"`
 	LastError string `json:"last_error,omitempty"`
 }
 

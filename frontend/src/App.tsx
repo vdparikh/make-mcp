@@ -44,17 +44,19 @@ function AppLayout() {
     <div className="app-container">
       <Sidebar />
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/servers/:id" element={<ServerEditor />} />
-          <Route path="/servers/:id/flow" element={<FlowBuilderPage />} />
-          <Route path="/flow" element={<FlowBuilderPage />} />
-          <Route path="/compositions" element={<Navigate to="/?tab=compositions" replace />} />
-          <Route path="/marketplace" element={<Marketplace />} />
-          <Route path="/observability" element={<Observability />} />
-          <Route path="/import/openapi" element={<ImportOpenAPI />} />
-          <Route path="/docs" element={<Docs />} />
-        </Routes>
+        <div className="main-content-container">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/servers/:id" element={<ServerEditor />} />
+            <Route path="/servers/:id/flow" element={<FlowBuilderPage />} />
+            <Route path="/flow" element={<FlowBuilderPage />} />
+            <Route path="/compositions" element={<Navigate to="/?tab=compositions" replace />} />
+            <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/observability" element={<Observability />} />
+            <Route path="/import/openapi" element={<ImportOpenAPI />} />
+            <Route path="/docs" element={<Docs />} />
+          </Routes>
+        </div>
       </main>
       <TryChatModal />
     </div>

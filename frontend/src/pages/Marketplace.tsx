@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Server, ServerVersion, Tool, Resource, Prompt, SecurityScoreResult } from '../types';
 import { listMarketplace, getMarketplaceServer, downloadMarketplaceServer, marketplaceHostedDeploy, marketplaceHostedStatus } from '../services/api';
@@ -21,6 +21,8 @@ export default function Marketplace() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'updated_desc' | 'downloads_desc' | 'name_asc'>('updated_desc');
   const navigate = useNavigate();
   const { openTryChat } = useTryChat();
 
@@ -136,6 +138,25 @@ export default function Marketplace() {
     );
   };
 
+  const filteredServers = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    let items = servers.filter((server) => {
+      if (!query) return true;
+      return (
+        server.name.toLowerCase().includes(query) ||
+        (server.description || '').toLowerCase().includes(query)
+      );
+    });
+    items = [...items].sort((a, b) => {
+      if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+      if (sortBy === 'downloads_desc') return (b.downloads || 0) - (a.downloads || 0);
+      const left = new Date(a.published_at || a.updated_at).getTime();
+      const right = new Date(b.published_at || b.updated_at).getTime();
+      return right - left;
+    });
+    return items;
+  }, [servers, searchQuery, sortBy]);
+
   return (
     <div className="dashboard">
       <div className="page-header">
@@ -154,6 +175,40 @@ export default function Marketplace() {
         </div>
       </div>
 
+      {!loading && servers.length > 0 && (
+        <div className="card page-quick-actions-card" style={{ marginBottom: '1rem' }}>
+          <div className="page-quick-actions-head">
+            <div>
+              <h3 className="card-title" style={{ margin: 0 }}>Marketplace browse</h3>
+              <p className="page-quick-actions-subtitle">Find a server, inspect details, then deploy to hosted runtime.</p>
+            </div>
+            <button className="btn btn-secondary" onClick={() => navigate('/')}>
+              <i className="bi bi-plus-lg"></i>
+              Create your own server
+            </button>
+          </div>
+          <div className="page-quick-actions-toolbar marketplace-toolbar-grid">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Search</label>
+              <input
+                className="form-control"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by server name or description"
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Sort</label>
+              <select className="form-control" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+                <option value="updated_desc">Recently published</option>
+                <option value="downloads_desc">Most downloaded</option>
+                <option value="name_asc">Name (A-Z)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="loading">Loading marketplace...</div>
       ) : servers.length === 0 ? (
@@ -165,9 +220,18 @@ export default function Marketplace() {
             Go to Dashboard
           </button>
         </div>
+      ) : filteredServers.length === 0 ? (
+        <div className="empty-state">
+          <i className="bi bi-search"></i>
+          <h3>No marketplace servers match your filters</h3>
+          <p>Try a different search or reset the sort.</p>
+          <button className="btn btn-secondary" onClick={() => { setSearchQuery(''); setSortBy('updated_desc'); }}>
+            Reset filters
+          </button>
+        </div>
       ) : (
         <div className="marketplace-grid">
-          {servers.map((server) => (
+          {filteredServers.map((server) => (
             <div key={server.id} className="marketplace-card">
               <div className="marketplace-card-header">
                 <div className="marketplace-icon">
@@ -239,21 +303,11 @@ export default function Marketplace() {
       {/* Inspector Modal */}
       {showModal && selectedServer && (
         <div 
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10000,
-          }}
+          className="marketplace-inspector-overlay"
           onClick={() => setShowModal(false)}
         >
           <div 
+            className="marketplace-inspector-modal"
             style={{
               backgroundColor: '#1e293b',
               borderRadius: '12px',
@@ -268,7 +322,7 @@ export default function Marketplace() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div style={{ 
+            <div className="marketplace-inspector-header" style={{ 
               padding: '1rem 1.5rem', 
               borderBottom: '1px solid #334155',
               display: 'flex',
@@ -276,8 +330,8 @@ export default function Marketplace() {
               justifyContent: 'space-between',
               background: '#0f172a',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <div style={{
+              <div className="marketplace-inspector-header-main" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="marketplace-inspector-icon" style={{
                   width: '40px',
                   height: '40px',
                   borderRadius: '10px',
@@ -321,7 +375,7 @@ export default function Marketplace() {
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div className="marketplace-inspector-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <button
                   className="btn btn-secondary"
                   onClick={() => openTryChat({ type: 'marketplace', id: selectedServer.id, name: selectedServer.name })}
@@ -355,7 +409,7 @@ export default function Marketplace() {
             </div>
 
             {/* Tabs */}
-            <div style={{ 
+            <div className="marketplace-inspector-tabs" style={{ 
               display: 'flex', 
               gap: '0',
               background: '#0f172a',
@@ -405,9 +459,9 @@ export default function Marketplace() {
             </div>
 
             {/* Content */}
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <div className="marketplace-inspector-body" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
               {/* Left Panel - List */}
-              <div style={{ 
+              <div className="marketplace-inspector-list" style={{ 
                 width: '320px', 
                 borderRight: '1px solid #334155',
                 overflowY: 'auto',
@@ -418,6 +472,7 @@ export default function Marketplace() {
                     selectedServer.tools.map(tool => (
                       <div
                         key={tool.id}
+                        className={`marketplace-inspector-item ${selectedTool?.id === tool.id ? 'active' : ''}`}
                         onClick={() => setSelectedTool(tool)}
                         style={{
                           padding: '1rem',
@@ -453,6 +508,7 @@ export default function Marketplace() {
                     selectedServer.resources.map(resource => (
                       <div
                         key={resource.id}
+                        className={`marketplace-inspector-item ${selectedResource?.id === resource.id ? 'active' : ''}`}
                         onClick={() => setSelectedResource(resource)}
                         style={{
                           padding: '1rem',
@@ -481,6 +537,7 @@ export default function Marketplace() {
                     selectedServer.prompts.map(prompt => (
                       <div
                         key={prompt.id}
+                        className={`marketplace-inspector-item ${selectedPrompt?.id === prompt.id ? 'active' : ''}`}
                         onClick={() => setSelectedPrompt(prompt)}
                         style={{
                           padding: '1rem',
@@ -523,6 +580,7 @@ export default function Marketplace() {
                     versions.map(version => (
                       <div
                         key={version.id}
+                        className="marketplace-inspector-item"
                         style={{
                           padding: '1rem',
                           borderBottom: '1px solid #334155',
@@ -563,7 +621,7 @@ export default function Marketplace() {
               </div>
 
               {/* Right Panel - Details */}
-              <div style={{ 
+              <div className="marketplace-inspector-details" style={{ 
                 flex: 1, 
                 overflowY: 'auto',
                 padding: '1.5rem',

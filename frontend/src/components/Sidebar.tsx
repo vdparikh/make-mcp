@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -6,13 +6,7 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  // Auto-collapse only on server edit page; auto-expand when leaving it
-  const onServerEditPage = /^\/servers\/[^/]+$/.test(location.pathname);
-  const [collapsed, setCollapsed] = useState<boolean>(() => onServerEditPage);
-
-  useEffect(() => {
-    setCollapsed(onServerEditPage);
-  }, [onServerEditPage]);
+  const [openMenu, setOpenMenu] = useState<'build' | 'resources' | 'user' | null>(null);
   
   const isActive = (path: string) => {
     if (path === '/') {
@@ -26,149 +20,83 @@ export default function Sidebar() {
     navigate('/login');
   };
 
+  useEffect(() => {
+    setOpenMenu(null);
+  }, [location.pathname]);
+
+  const toggleMenu = (menu: 'build' | 'resources' | 'user') => {
+    setOpenMenu((prev) => (prev === menu ? null : menu));
+  };
+
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-header">
-        <Link to="/" className="sidebar-logo">
-          <div className="sidebar-logo-icon rounded-pill" style={{ backgroundColor: 'var(--primary-dark)' }}>
-            <i  className="bi bi-lightning-charge-fill"></i>
+    <header className="top-nav">
+      <div className="top-nav-inner">
+        <Link to="/" className="top-nav-brand" aria-label="Go to dashboard">
+          <div className="top-nav-logo-icon rounded-pill" style={{ backgroundColor: 'var(--primary-dark)' }}>
+            <i className="bi bi-lightning-charge-fill" />
           </div>
-          <h1>Make MCP</h1>
+          <span className="top-nav-brand-text">Make MCP</span>
         </Link>
-        <button
-          type="button"
-          className="sidebar-toggle"
-          onClick={() => setCollapsed(!collapsed)}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <i className={`bi ${collapsed ? 'bi-chevron-right' : 'bi-chevron-left'}`}></i>
-        </button>
-      </div>
 
-      <nav className="sidebar-nav">
-        <div className="nav-section">
-          <div className="nav-section-title">Main</div>
-          <Link to="/" className={`nav-item ${isActive('/') && location.pathname === '/' ? 'active' : ''}`}>
-            <i className="bi bi-grid-3x3-gap-fill"></i>
-            <span>Dashboard</span>
-          </Link>
-          <Link to="/marketplace" className={`nav-item ${isActive('/marketplace') ? 'active' : ''}`}>
-            <i className="bi bi-shop"></i>
-            <span>Marketplace</span>
-          </Link>
-          <Link to="/observability" className={`nav-item ${isActive('/observability') ? 'active' : ''}`}>
-            <i className="bi bi-graph-up"></i>
-            <span>Observability</span>
-          </Link>
-        </div>
+        <nav className="top-nav-links">
+          <Link to="/" className={`top-nav-link ${location.pathname === '/' ? 'active' : ''}`}>Dashboard</Link>
+          <Link to="/marketplace" className={`top-nav-link ${isActive('/marketplace') ? 'active' : ''}`}>Marketplace</Link>
+          <Link to="/observability" className={`top-nav-link ${isActive('/observability') ? 'active' : ''}`}>Observability</Link>
 
-        <div className="nav-section">
-          <div className="nav-section-title">Import</div>
-          <Link to="/import/openapi" className={`nav-item ${isActive('/import/openapi') ? 'active' : ''}`}>
-            <i className="bi bi-file-earmark-code"></i>
-            <span>OpenAPI</span>
-          </Link>
-        </div>
-
-
-        <div className="nav-section">
-          <div className="nav-section-title">Resources</div>
-          <Link to="/docs" className={`nav-item ${isActive('/docs') ? 'active' : ''}`}>
-            <i className="bi bi-book"></i>
-            <span>Documentation</span>
-          </Link>
-          <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer" className="nav-item">
-            <i className="bi bi-box-arrow-up-right"></i>
-            <span>MCP Protocol</span>
-          </a>
-        </div>
-      </nav>
-
-      {/* User section */}
-      <div className="sidebar-user-section" style={{ 
-        marginTop: 'auto',
-        padding: '1rem', 
-        borderTop: '1px solid var(--card-border)',
-      }}>
-        {user && (
-          <div className="sidebar-user-info" style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '0.75rem',
-            marginBottom: '0.75rem'
-          }}>
-            <div style={{
-              width: '36px',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '50%',
-              background: 'var(--primary-light)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--primary-color)',
-              fontWeight: 600,
-              fontSize: '0.875rem'
-            }}>
-              {user.name.charAt(0).toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ 
-                fontSize: '0.875rem', 
-                fontWeight: 500, 
-                color: 'var(--text-primary)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {user.name}
-              </div>
-              <div style={{ 
-                fontSize: '0.75rem', 
-                color: 'var(--text-muted)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {user.email}
-              </div>
+          <div className={`top-nav-menu ${openMenu === 'build' ? 'open' : ''}`}>
+            <button type="button" className="top-nav-link top-nav-menu-trigger" onClick={() => toggleMenu('build')}>
+              Build
+              <i className="bi bi-chevron-down" />
+            </button>
+            <div className="top-nav-dropdown">
+              <button type="button" className="top-nav-dropdown-item" onClick={() => navigate('/')}>
+                <i className="bi bi-plus-lg" />
+                New Server
+              </button>
+              <button type="button" className="top-nav-dropdown-item" onClick={() => navigate('/?tab=compositions')}>
+                <i className="bi bi-layers" />
+                Compositions
+              </button>
+              <button type="button" className="top-nav-dropdown-item" onClick={() => navigate('/import/openapi')}>
+                <i className="bi bi-file-earmark-code" />
+                Import OpenAPI
+              </button>
             </div>
           </div>
-        )}
-        <button 
-          onClick={handleLogout}
-          className="sidebar-signout-btn"
-          style={{
-            width: '100%',
-            padding: '0.5rem',
-            background: 'transparent',
-            border: '1px solid var(--card-border)',
-            borderRadius: '6px',
-            color: 'var(--text-secondary)',
-            fontSize: '0.8125rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.5rem',
-            transition: 'all 0.15s'
-          }}
-          onMouseOver={(e) => {
-            e.currentTarget.style.background = 'var(--hover-bg)';
-            e.currentTarget.style.color = 'var(--danger-color)';
-            e.currentTarget.style.borderColor = 'var(--danger-color)';
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = 'var(--text-secondary)';
-            e.currentTarget.style.borderColor = 'var(--card-border)';
-          }}
-          aria-label="Sign out"
-        >
-          <i className="bi bi-box-arrow-left"></i>
-          <span className="sidebar-signout-text">Sign Out</span>
-        </button>
+
+          <div className={`top-nav-menu ${openMenu === 'resources' ? 'open' : ''}`}>
+            <button type="button" className="top-nav-link top-nav-menu-trigger" onClick={() => toggleMenu('resources')}>
+              Resources
+              <i className="bi bi-chevron-down" />
+            </button>
+            <div className="top-nav-dropdown">
+              <button type="button" className="top-nav-dropdown-item" onClick={() => navigate('/docs')}>
+                <i className="bi bi-book" />
+                Documentation
+              </button>
+              <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer" className="top-nav-dropdown-item">
+                <i className="bi bi-box-arrow-up-right" />
+                MCP Protocol
+              </a>
+            </div>
+          </div>
+        </nav>
+
+        <div className={`top-nav-menu top-nav-user-menu ${openMenu === 'user' ? 'open' : ''}`}>
+          <button type="button" className="top-nav-user-trigger" onClick={() => toggleMenu('user')} aria-label="User menu">
+            <span className="top-nav-user-avatar">{user?.name?.charAt(0).toUpperCase() || 'U'}</span>
+            <span className="top-nav-user-name">{user?.name || 'User'}</span>
+            <i className="bi bi-chevron-down" />
+          </button>
+          <div className="top-nav-dropdown top-nav-user-dropdown">
+            {user?.email && <div className="top-nav-user-email">{user.email}</div>}
+            <button type="button" className="top-nav-dropdown-item danger" onClick={handleLogout}>
+              <i className="bi bi-box-arrow-left" />
+              Sign Out
+            </button>
+          </div>
+        </div>
       </div>
-    </aside>
+    </header>
   );
 }

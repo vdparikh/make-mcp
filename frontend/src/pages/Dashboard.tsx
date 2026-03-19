@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import type { Server, ServerComposition } from '../types';
@@ -6,6 +6,8 @@ import { listServers, listCompositions, createServer, createDemoServer, deleteSe
 import CreateServerModal from '../components/CreateServerModal';
 import CompositionsTab from '../components/CompositionsTab';
 import { useAuth } from '../contexts/AuthContext';
+import { useTryChat } from '../contexts/TryChatContext';
+import ConfirmModal from '../components/ConfirmModal';
 
 type Tab = 'servers' | 'compositions';
 
@@ -16,13 +18,28 @@ export default function Dashboard() {
   const activeTab: Tab = tabParam === 'compositions' ? 'compositions' : 'servers';
 
   const { user, token } = useAuth();
+  const { openTryChat } = useTryChat();
   const [servers, setServers] = useState<Server[]>([]);
   const [compositions, setCompositions] = useState<ServerComposition[]>([]);
   const [loading, setLoading] = useState(true);
   const [compositionsLoading, setCompositionsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [deleteServerId, setDeleteServerId] = useState<string | null>(null);
   const [openCompositionForm, setOpenCompositionForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published' | 'archived' | 'hosted_running'>('all');
+  const [sortBy, setSortBy] = useState<'updated_desc' | 'name_asc' | 'tools_desc'>('updated_desc');
+  const [hostedRuntimeByServer, setHostedRuntimeByServer] = useState<Record<string, { running: boolean; health?: string }>>({});
+
+  const mapHostedRuntimeFromServers = (items: Server[]): Record<string, { running: boolean; health?: string }> => {
+    const next: Record<string, { running: boolean; health?: string }> = {};
+    (items || []).forEach((s) => {
+      if (s.hosted_running) {
+        next[s.id] = { running: true };
+      }
+    });
+    return next;
+  };
 
   const setTab = (t: Tab) => {
     if (t === 'compositions') setSearchParams({ tab: 'compositions' });
@@ -33,14 +50,18 @@ export default function Dashboard() {
   useEffect(() => {
     if (!token || !user?.id) {
       setServers([]);
+      setHostedRuntimeByServer({});
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
     listServers()
-      .then((data) => {
-        if (!cancelled) setServers(data ?? []);
+      .then((serverData) => {
+        if (cancelled) return;
+        const safeServers = serverData ?? [];
+        setServers(safeServers);
+        setHostedRuntimeByServer(mapHostedRuntimeFromServers(safeServers));
       })
       .catch(() => {
         if (!cancelled) toast.error('Failed to load servers');
@@ -73,7 +94,9 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const data = await listServers();
-      setServers(data ?? []);
+      const safeServers = data ?? [];
+      setServers(safeServers);
+      setHostedRuntimeByServer(mapHostedRuntimeFromServers(safeServers));
     } catch (error) {
       toast.error('Failed to load servers');
     } finally {
@@ -132,8 +155,6 @@ export default function Dashboard() {
   };
 
   const handleDeleteServer = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this server?')) return;
-    
     try {
       await deleteServer(id);
       toast.success('Server deleted');
@@ -150,6 +171,29 @@ export default function Dashboard() {
       year: 'numeric',
     });
   };
+
+  const filteredServers = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    let items = servers.filter((s) => {
+      if (statusFilter === 'hosted_running') {
+        return hostedRuntimeByServer[s.id]?.running === true;
+      }
+      if (statusFilter !== 'all' && (s.status || 'draft') !== statusFilter) {
+        return false;
+      }
+      if (!query) return true;
+      return (
+        s.name.toLowerCase().includes(query) ||
+        (s.description || '').toLowerCase().includes(query)
+      );
+    });
+    items = [...items].sort((a, b) => {
+      if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+      if (sortBy === 'tools_desc') return (b.tools?.length || 0) - (a.tools?.length || 0);
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+    return items;
+  }, [servers, hostedRuntimeByServer, searchQuery, sortBy, statusFilter]);
 
   return (
     <div>
@@ -211,28 +255,6 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          {activeTab === 'servers' && (
-            <>
-              <button type="button" className="btn btn-secondary" onClick={() => navigate('/import/openapi')}>
-                <i className="bi bi-file-earmark-code"></i>
-                Import OpenAPI
-              </button>
-              <button type="button" className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-                <i className="bi bi-plus-lg"></i>
-                New Server
-              </button>
-            </>
-          )}
-          {activeTab === 'compositions' && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setOpenCompositionForm(true)}
-            >
-              <i className="bi bi-plus-lg"></i>
-              New Composition
-            </button>
-          )}
         </div>
       </div>
 
@@ -249,123 +271,83 @@ export default function Dashboard() {
 
       {activeTab === 'servers' && (
         <>
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-value">{servers.length}</div>
-          <div className="stat-label">Total Servers</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {servers.filter(s => s.status === 'published').length}
+      <div className="card dashboard-quick-actions-card dashboard-quick-actions-featured">
+        <div className="dashboard-quick-actions-head">
+          <div>
+            <h3 className="card-title" style={{ margin: 0 }}>Quick start</h3>
+            <p className="dashboard-quick-actions-subtitle">Create from scratch, use templates, or import OpenAPI in one place.</p>
           </div>
-          <div className="stat-label">Published</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {servers.reduce((acc, s) => acc + (s.tools?.length || 0), 0)}
-          </div>
-          <div className="stat-label">Total Tools</div>
+        <div className="dashboard-quick-actions-grid">
+          <button type="button" className="btn btn-primary dashboard-quick-action-btn" onClick={() => setShowCreateModal(true)}>
+            <i className="bi bi-plus-lg"></i>
+            New Server
+          </button>
+          <button type="button" className="btn btn-secondary dashboard-quick-action-btn" onClick={handleCreateDemoServer}>
+            <i className="bi bi-box-seam"></i>
+            Use Demo Template
+          </button>
+          <button type="button" className="btn btn-secondary dashboard-quick-action-btn" onClick={handleCreateRestStarterServer}>
+            <i className="bi bi-globe"></i>
+            Use REST Template
+          </button>
+          <button type="button" className="btn btn-outline-primary dashboard-quick-action-btn" onClick={() => navigate('/import/openapi')}>
+            <i className="bi bi-file-earmark-code"></i>
+            Import OpenAPI
+          </button>
         </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {servers.reduce((acc, s) => acc + (s.resources?.length || 0), 0)}
-          </div>
-          <div className="stat-label">Total Resources</div>
+      </div>
+
+      <div className="dashboard-kpi-strip" role="status" aria-label="Server metrics">
+        <div className="dashboard-kpi-item">
+          <span className="dashboard-kpi-label">Servers</span>
+          <span className="dashboard-kpi-value">{servers.length}</span>
+        </div>
+        <div className="dashboard-kpi-item">
+          <span className="dashboard-kpi-label">Published</span>
+          <span className="dashboard-kpi-value">{servers.filter((s) => s.status === 'published').length}</span>
+        </div>
+        <div className="dashboard-kpi-item">
+          <span className="dashboard-kpi-label">Tools</span>
+          <span className="dashboard-kpi-value">{servers.reduce((acc, s) => acc + (s.tools?.length || 0), 0)}</span>
+        </div>
+        <div className="dashboard-kpi-item">
+          <span className="dashboard-kpi-label">Hosted live</span>
+          <span className="dashboard-kpi-value">{servers.filter((s) => hostedRuntimeByServer[s.id]?.running).length}</span>
         </div>
       </div>
 
       {!loading && servers.length > 0 && (
-        <div className="card" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
-          <button
-            type="button"
-            onClick={() => setShowTemplates(!showTemplates)}
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              width: '100%',
-              padding: '0.5rem 0 0.75rem 0',
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-            }}
-          >
-            <div style={{ textAlign: 'left' }}>
-              <h3 className="card-title" style={{ marginBottom: '0.1rem' }}>
-                <i className="bi bi-lightning" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
-                Start from a template
-              </h3>
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                Spin up a demo or starter server, then customize tools, resources, and policies.
-              </p>
+        <div className="card dashboard-controls-card">
+          <div className="dashboard-controls-grid">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Search</label>
+              <input
+                className="form-control"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name or description"
+              />
             </div>
-            <i
-              className={`bi ${showTemplates ? 'bi-chevron-up' : 'bi-chevron-down'}`}
-              style={{ fontSize: '1rem', color: 'var(--text-muted)' }}
-            ></i>
-          </button>
-
-          {showTemplates && (
-            <div className="server-grid" style={{ marginTop: '0.75rem' }}>
-              <div className="card" style={{ cursor: 'pointer' }} onClick={handleCreateDemoServer}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '0.75rem' }}>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  background: 'var(--primary-light)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.25rem',
-                  color: 'var(--primary-color)',
-                  flexShrink: 0,
-                }}>
-                  <i className="bi bi-box-seam"></i>
-                </div>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: '0.95rem' }}>Demo API Toolkit</h4>
-                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    Fully configured demo server with location lookup, weather, jokes, GitHub, and more.
-                  </p>
-                </div>
-              </div>
-              <button className="btn btn-primary btn-sm" type="button">
-                <i className="bi bi-plus-lg"></i>
-                Use template
-              </button>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Status</label>
+              <select className="form-control" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+                <option value="all">All</option>
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="archived">Archived</option>
+                <option value="hosted_running">Hosted Running</option>
+              </select>
             </div>
-
-              <div className="card" style={{ cursor: 'pointer' }} onClick={handleCreateRestStarterServer}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '0.75rem' }}>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  background: 'var(--primary-light)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '1.25rem',
-                  color: 'var(--primary-color)',
-                  flexShrink: 0,
-                }}>
-                  <i className="bi bi-globe"></i>
-                </div>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: '0.95rem' }}>REST API Starter</h4>
-                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    Clean server ready for REST tools. Add tools for your existing APIs in minutes.
-                  </p>
-                </div>
-              </div>
-              <button className="btn btn-outline-primary btn-sm" type="button">
-                <i className="bi bi-plus-lg"></i>
-                Use template
-              </button>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Sort</label>
+              <select className="form-control" value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+                <option value="updated_desc">Recently updated</option>
+                <option value="name_asc">Name (A-Z)</option>
+                <option value="tools_desc">Most tools</option>
+              </select>
             </div>
-            </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -389,10 +371,19 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+      ) : filteredServers.length === 0 ? (
+        <div className="empty-state">
+          <i className="bi bi-search"></i>
+          <h3>No servers match your filters</h3>
+          <p>Try clearing search or selecting a different status/sort.</p>
+          <button className="btn btn-secondary" onClick={() => { setSearchQuery(''); setStatusFilter('all'); setSortBy('updated_desc'); }}>
+            Reset filters
+          </button>
+        </div>
       ) : (
         <div className="server-grid">
-          {servers.map((server) => (
-            <div className="card" key={server.id}>
+          {filteredServers.map((server) => (
+            <div className="card dashboard-server-card" key={server.id}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1rem' }}>
                 <div style={{
                   width: '48px',
@@ -418,6 +409,12 @@ export default function Dashboard() {
                       <span className="badge badge-primary">v{server.latest_version || server.version}</span>
                     </div>
                   </div>
+                  {hostedRuntimeByServer[server.id]?.running && (
+                    <div className="dashboard-hosted-pill">
+                      <span className="dashboard-hosted-dot" />
+                      Hosted running {hostedRuntimeByServer[server.id]?.health ? `· ${hostedRuntimeByServer[server.id]?.health}` : ''}
+                    </div>
+                  )}
                   <p className="card-description" style={{ margin: '0.25rem 0 0 0' }}>
                     {server.description || 'No description'}
                   </p>
@@ -451,9 +448,16 @@ export default function Dashboard() {
                   Updated {formatDate(server.updated_at)}
                 </span>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    className="btn btn-icon btn-secondary btn-sm"
+                    onClick={() => openTryChat({ type: 'server', id: server.id, name: server.name })}
+                    data-tooltip="Try Chat"
+                  >
+                    <i className="bi bi-stars"></i>
+                  </button>
                   <button 
                     className="btn btn-icon btn-secondary btn-sm"
-                    onClick={() => handleDeleteServer(server.id)}
+                    onClick={() => setDeleteServerId(server.id)}
                     data-tooltip="Delete"
                   >
                     <i className="bi bi-trash"></i>
@@ -477,6 +481,19 @@ export default function Dashboard() {
           onCreate={handleCreateServer}
         />
       )}
+      <ConfirmModal
+        open={!!deleteServerId}
+        title="Delete server?"
+        message="This permanently removes the server and its local configuration."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setDeleteServerId(null)}
+        onConfirm={async () => {
+          if (!deleteServerId) return;
+          await handleDeleteServer(deleteServerId);
+          setDeleteServerId(null);
+        }}
+      />
     </div>
   );
 }
