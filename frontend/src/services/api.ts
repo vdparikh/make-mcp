@@ -612,6 +612,8 @@ export interface HostedPublishResponse {
   mcp_config: string;
 }
 
+export type HostedAuthMode = 'bearer_token' | 'no_auth';
+
 export interface HostedStatusResponse {
   running: boolean;
   user_id?: string;
@@ -634,6 +636,8 @@ export interface HostedStatusResponse {
   pids_limit?: number;
   idle_timeout_minutes?: number;
   network_scope?: string;
+  hosted_auth_mode?: HostedAuthMode;
+  require_caller_identity?: boolean;
 }
 
 export interface TryProviderInfo {
@@ -702,12 +706,16 @@ export const hostedPublish = async (
   serverId: string,
   version?: string,
   envProfile?: EnvProfileKey,
-  idleTimeoutMinutes?: number
+  idleTimeoutMinutes?: number,
+  hostedAuthMode?: HostedAuthMode,
+  requireCallerIdentity?: boolean
 ): Promise<HostedPublishResponse> => {
   const { data } = await api.post<HostedPublishResponse>(`/servers/${serverId}/hosted-publish`, {
     version: version || '',
     env_profile: envProfile || undefined,
     idle_timeout_minutes: idleTimeoutMinutes,
+    hosted_auth_mode: hostedAuthMode,
+    require_caller_identity: requireCallerIdentity,
   });
   return data;
 };
@@ -740,11 +748,15 @@ export const stopHostedSession = async (serverId: string): Promise<HostedSession
 export const marketplaceHostedDeploy = async (
   serverId: string,
   envProfile?: EnvProfileKey,
-  idleTimeoutMinutes?: number
+  idleTimeoutMinutes?: number,
+  hostedAuthMode?: HostedAuthMode,
+  requireCallerIdentity?: boolean
 ): Promise<HostedStatusResponse> => {
   const { data } = await api.post<HostedStatusResponse>(`/marketplace/${serverId}/hosted-deploy`, {
     env_profile: envProfile || undefined,
     idle_timeout_minutes: idleTimeoutMinutes,
+    hosted_auth_mode: hostedAuthMode,
+    require_caller_identity: requireCallerIdentity,
   });
   return data;
 };
@@ -757,11 +769,15 @@ export const marketplaceHostedStatus = async (serverId: string): Promise<HostedS
 export const compositionHostedDeploy = async (
   compositionId: string,
   envProfile?: EnvProfileKey,
-  idleTimeoutMinutes?: number
+  idleTimeoutMinutes?: number,
+  hostedAuthMode?: HostedAuthMode,
+  requireCallerIdentity?: boolean
 ): Promise<HostedStatusResponse> => {
   const { data } = await api.post<HostedStatusResponse>(`/compositions/${compositionId}/hosted-deploy`, {
     env_profile: envProfile || undefined,
     idle_timeout_minutes: idleTimeoutMinutes,
+    hosted_auth_mode: hostedAuthMode,
+    require_caller_identity: requireCallerIdentity,
   });
   return data;
 };

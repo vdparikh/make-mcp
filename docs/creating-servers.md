@@ -764,8 +764,12 @@ Configure your MCP client to connect to the server (stdio or the port your serve
 ### Publish MCP (Hosted URL)
 
 1. Select **Publish MCP** in the Deploy tab.
-2. Click **Publish MCP** (or **Re-publish MCP** if already running).
-3. Copy the hosted URL and MCP config from the panel.
+2. Configure **Access & Security**:
+   - **Endpoint protection**: `No auth` or `Bearer token`
+   - **Caller identity**: optional/required toggle (`X-Make-MCP-Caller-Id`)
+   - **Idle shutdown**: stop container after inactivity window
+3. Click **Publish MCP** (or **Re-publish MCP** if already running).
+4. Use one-click install buttons (Cursor / VS Code / VS Code Insiders), or copy manual MCP JSON config.
 
 Hosted URL format:
 
@@ -782,7 +786,7 @@ Notes:
 
 ### MCP Client Configuration
 
-Add to your MCP client (Cursor, Claude Desktop, etc.):
+Manual config (for clients without deep-link install):
 
 ```json
 {
@@ -798,6 +802,12 @@ Add to your MCP client (Cursor, Claude Desktop, etc.):
 To verify the client invokes your server, use `run-with-log.mjs` as the entry point and run `tail -f mcp.log` (see [Getting Started - Verifying](../getting-started.md#verifying-that-your-client-eg-cursor-invokes-the-server)).
 
 For **hosted URL** servers, the process runs remotely inside a managed container. Any runtime environment variables (including observability vars) must be configured by the hosting platform; local `mcp.json` env is not the source of truth for hosted runtime configuration.
+
+For supported IDEs, prefer **one-click install** from Deploy:
+
+- Cursor deep link install
+- VS Code protocol install
+- VS Code Insiders protocol install
 
 ### Environment Variables
 

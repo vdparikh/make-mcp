@@ -280,6 +280,11 @@ Test tools before deployment:
 
 From the **Deploy** tab you can:
 - **Environment profiles** — Configured in the **Environments** tab (left menu, below General). Set Base URL and Database URL for Dev, Staging, and Prod; Testing and Deploy use this configuration. See [Creating Servers → Environment profiles](./creating-servers.md#environment-profiles-dev--staging--prod).
+- **Hosted (Publish MCP)** — Deploy to managed runtime and get hosted URL + MCP config. Configure:
+  - **Endpoint protection**: `Bearer token` or `No auth`
+  - **Caller identity**: independent toggle requiring `X-Make-MCP-Caller-Id` for per-user attribution
+  - **Idle shutdown** policy
+  - **One-click install** buttons for Cursor, VS Code, and VS Code Insiders
 - **Node.js** — Generate and download a ZIP (Node.js + TypeScript project). Includes `run-with-log.mjs` for verifying tool invocations.
 - **Docker** — Instructions and generated Dockerfile; run as non-root.
 - **GitHub** — Push the generated server to a GitHub repository (create or existing).
@@ -508,6 +513,12 @@ All `/api/servers`, `/api/tools`, `/api/resources`, `/api/prompts`, `/api/polici
 | GET | `/api/hosted/sessions/:server_id/health` | Session health check |
 | POST | `/api/hosted/sessions/:server_id/restart` | Restart hosted session |
 | POST | `/api/hosted/sessions/:server_id/stop` | Stop hosted session |
+
+Hosted deploy requests support:
+
+- `hosted_auth_mode`: `bearer_token` or `no_auth`
+- `require_caller_identity`: boolean toggle for caller attribution enforcement
+- `idle_timeout_minutes`: idle auto-shutdown window
 
 ### Try Chat (auth required)
 

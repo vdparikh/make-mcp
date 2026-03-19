@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	stdcontext "context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -47,6 +48,13 @@ type Handler struct {
 	hostedMgr     *hosted.Manager
 	llmService    *llm.Service
 }
+
+const hostedAccessHeader = "X-Make-MCP-Key"
+
+const (
+	hostedAuthModeBearerToken = "bearer_token"
+	hostedAuthModeNoAuth      = "no_auth"
+)
 
 // NewHandler creates a new API handler
 func NewHandler(db *database.DB, wa *webauthnlib.WebAuthn, sessionStore *webauthnpkg.SessionStore) *Handler {
@@ -205,7 +213,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		api.POST("/import/openapi/preview", h.PreviewOpenAPIImport)
 		api.POST("/import/openapi/fetch-url", h.FetchOpenAPIFromURL)
 
-		// Hosted MCP: no auth.
+		// Hosted MCP: auth-key boundary enforced in handlers before proxying.
 		// Canonical URL has no version; /:version remains for backward compatibility.
 		api.GET("/users/:user_id/:server_slug", h.HostedMCPGet)
 		api.POST("/users/:user_id/:server_slug", h.HostedMCPPost)
@@ -1345,14 +1353,18 @@ func (h *Handler) PublishServer(c *gin.Context) {
 
 // HostedPublishRequest is the body for hosted-publish.
 type HostedPublishRequest struct {
-	Version            string `json:"version"` // deprecated; ignored for hosted runtime selection
-	EnvProfile         string `json:"env_profile,omitempty"`
-	IdleTimeoutMinutes *int   `json:"idle_timeout_minutes,omitempty"`
+	Version               string `json:"version"` // deprecated; ignored for hosted runtime selection
+	EnvProfile            string `json:"env_profile,omitempty"`
+	IdleTimeoutMinutes    *int   `json:"idle_timeout_minutes,omitempty"`
+	HostedAuthMode        string `json:"hosted_auth_mode,omitempty"`        // "bearer_token" or "no_auth"
+	RequireCallerIdentity *bool  `json:"require_caller_identity,omitempty"` // independent toggle
 }
 
 type HostedDeployConfig struct {
-	EnvProfile         string `json:"env_profile,omitempty"`
-	IdleTimeoutMinutes *int   `json:"idle_timeout_minutes,omitempty"`
+	EnvProfile            string `json:"env_profile,omitempty"`
+	IdleTimeoutMinutes    *int   `json:"idle_timeout_minutes,omitempty"`
+	HostedAuthMode        string `json:"hosted_auth_mode,omitempty"`
+	RequireCallerIdentity *bool  `json:"require_caller_identity,omitempty"`
 }
 
 // HostedPublishResponse is returned after publishing to hosted.
@@ -1385,8 +1397,10 @@ type HostedStatusResponse struct {
 	MemoryMB           int64           `json:"memory_mb,omitempty"`
 	NanoCPUs           int64           `json:"nano_cpus,omitempty"`
 	PidsLimit          int64           `json:"pids_limit,omitempty"`
-	IdleTimeoutMinutes int             `json:"idle_timeout_minutes,omitempty"`
-	NetworkScope       string          `json:"network_scope,omitempty"`
+	IdleTimeoutMinutes    int             `json:"idle_timeout_minutes,omitempty"`
+	NetworkScope          string          `json:"network_scope,omitempty"`
+	HostedAuthMode        string          `json:"hosted_auth_mode,omitempty"`
+	RequireCallerIdentity bool            `json:"require_caller_identity"`
 }
 
 type HostedSessionListItem struct {
@@ -1402,6 +1416,22 @@ func normalizeIdleTimeoutMinutes(value *int) (int, error) {
 		return 0, fmt.Errorf("idle_timeout_minutes must be between 0 and 10080")
 	}
 	return *value, nil
+}
+
+func normalizeHostedAuthMode(value string) (string, error) {
+	mode := strings.TrimSpace(strings.ToLower(value))
+	if mode == "" {
+		return hostedAuthModeNoAuth, nil
+	}
+	// Map legacy values to the simplified model.
+	switch mode {
+	case hostedAuthModeBearerToken, "auto_flow":
+		return hostedAuthModeBearerToken, nil
+	case hostedAuthModeNoAuth, "caller_identity":
+		return hostedAuthModeNoAuth, nil
+	default:
+		return "", fmt.Errorf("hosted_auth_mode must be one of: %s, %s", hostedAuthModeBearerToken, hostedAuthModeNoAuth)
+	}
 }
 
 // HostedPublish publishes the latest hosted snapshot and makes it available at /api/users/:user_id/:server_slug.
@@ -1427,6 +1457,23 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	if idleErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": idleErr.Error()})
 		return
+	}
+	hostedAuthMode, authModeErr := normalizeHostedAuthMode(req.HostedAuthMode)
+	if authModeErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": authModeErr.Error()})
+		return
+	}
+	if err := h.db.UpdateServerHostedAuthMode(c.Request.Context(), server.ID, hostedAuthMode); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist hosted auth mode"})
+		return
+	}
+	server.HostedAuthMode = hostedAuthMode
+	if req.RequireCallerIdentity != nil {
+		if err := h.db.UpdateServerRequireCallerIdentity(c.Request.Context(), server.ID, *req.RequireCallerIdentity); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist caller identity setting"})
+			return
+		}
+		server.RequireCallerIdentity = *req.RequireCallerIdentity
 	}
 
 	// Keep request backward-compatible, but hosted deployment no longer uses user-provided version.
@@ -1476,7 +1523,12 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
 	endpoint := baseURL + "/users/" + userID + "/" + slug
 
-	mcpConfigBytes, err := h.buildHostedMCPConfig(slug, endpoint)
+	hostedAccessKey, err := h.db.EnsureServerHostedAccessKey(c.Request.Context(), server.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to provision hosted access token"})
+		return
+	}
+	mcpConfigBytes, err := h.buildHostedMCPConfig(slug, endpoint, server, hostedAccessKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build mcp config"})
 		return
@@ -1561,15 +1613,34 @@ func (h *Handler) hostedObservabilityEnv(c *gin.Context, server *models.Server) 
 	return env
 }
 
-func (h *Handler) buildHostedMCPConfig(slug, endpoint string) ([]byte, error) {
+func (h *Handler) buildHostedMCPConfig(slug, endpoint string, server *models.Server, hostedAccessKey string) ([]byte, error) {
 	serverConfig := map[string]interface{}{
 		"url": endpoint,
 	}
-	return json.MarshalIndent(map[string]interface{}{
+	headers := map[string]string{}
+	authMode, _ := normalizeHostedAuthMode(server.HostedAuthMode)
+	if authMode == hostedAuthModeBearerToken && strings.TrimSpace(hostedAccessKey) != "" {
+		headers["Authorization"] = "Bearer " + hostedAccessKey
+	}
+	if server.RequireCallerIdentity {
+		headers["X-Make-MCP-Caller-Id"] = "<your-caller-id>"
+		headers["X-Make-MCP-Tenant-Id"] = "<your-tenant-id>"
+	}
+	if len(headers) > 0 {
+		serverConfig["headers"] = headers
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(map[string]interface{}{
 		"mcpServers": map[string]interface{}{
 			slug: serverConfig,
 		},
-	}, "", "  ")
+	}); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
 func (h *Handler) HostedStatus(c *gin.Context) {
@@ -1611,7 +1682,15 @@ func (h *Handler) buildHostedStatusResponse(c *gin.Context, server *models.Serve
 	}
 	baseURL := strings.TrimSuffix(h.hostedBaseURL(c), "/")
 	slug := database.ServerSlug(server.Name)
-	mcpConfigBytes, err := h.buildHostedMCPConfig(slug, baseURL+"/users/"+userID+"/"+slug)
+	hostedAuthMode, modeErr := normalizeHostedAuthMode(server.HostedAuthMode)
+	if modeErr != nil {
+		hostedAuthMode = hostedAuthModeNoAuth
+	}
+	hostedAccessKey, err := h.db.EnsureServerHostedAccessKey(c.Request.Context(), server.ID)
+	if err != nil {
+		return HostedStatusResponse{}, fmt.Errorf("failed to provision hosted access token: %w", err)
+	}
+	mcpConfigBytes, err := h.buildHostedMCPConfig(slug, baseURL+"/users/"+userID+"/"+slug, server, hostedAccessKey)
 	if err != nil {
 		return HostedStatusResponse{}, fmt.Errorf("failed to build mcp config: %w", err)
 	}
@@ -1681,27 +1760,29 @@ func (h *Handler) buildHostedStatusResponse(c *gin.Context, server *models.Serve
 		}
 	}
 	return HostedStatusResponse{
-		Running:            true,
-		UserID:             userID,
-		ServerID:           server.ID,
-		ServerSlug:         slug,
-		Version:            cfg.Version,
-		SnapshotID:         snapshotID,
-		SnapshotVersion:    snapshotVersion,
-		StartedAt:          startedAt,
-		LastEnsuredAt:      lastEnsuredAt,
-		Endpoint:           baseURL + "/users/" + userID + "/" + slug,
-		MCPConfig:          string(mcpConfigBytes),
-		Manifest:           manifest,
-		ContainerID:        cfg.ContainerID,
-		HostPort:           cfg.HostPort,
-		Runtime:            runtimeName,
-		Image:              imageName,
-		MemoryMB:           memoryMB,
-		NanoCPUs:           nanoCPUs,
-		PidsLimit:          pidsLimit,
-		IdleTimeoutMinutes: idleTimeoutMinutes,
-		NetworkScope:       networkScope,
+		Running:               true,
+		UserID:                userID,
+		ServerID:              server.ID,
+		ServerSlug:            slug,
+		Version:               cfg.Version,
+		SnapshotID:            snapshotID,
+		SnapshotVersion:       snapshotVersion,
+		StartedAt:             startedAt,
+		LastEnsuredAt:         lastEnsuredAt,
+		Endpoint:              baseURL + "/users/" + userID + "/" + slug,
+		MCPConfig:             string(mcpConfigBytes),
+		Manifest:              manifest,
+		ContainerID:           cfg.ContainerID,
+		HostPort:              cfg.HostPort,
+		Runtime:               runtimeName,
+		Image:                 imageName,
+		MemoryMB:              memoryMB,
+		NanoCPUs:              nanoCPUs,
+		PidsLimit:             pidsLimit,
+		IdleTimeoutMinutes:    idleTimeoutMinutes,
+		NetworkScope:          networkScope,
+		HostedAuthMode:        hostedAuthMode,
+		RequireCallerIdentity: server.RequireCallerIdentity,
 	}, nil
 }
 
@@ -1833,6 +1914,7 @@ type hostedResolvedTarget struct {
 	ServerID   string
 	ServerSlug string
 	Version    string
+	Server     *models.Server
 	Snapshot   *models.Server
 }
 
@@ -1868,8 +1950,87 @@ func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, er
 		ServerID:   server.ID,
 		ServerSlug: serverSlug,
 		Version:    sv.Version,
+		Server:     server,
 		Snapshot:   &snap,
 	}, nil
+}
+
+func hostedAccessTokenFromRequest(c *gin.Context) string {
+	if authz := strings.TrimSpace(c.GetHeader("Authorization")); authz != "" {
+		parts := strings.Fields(authz)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	if key := strings.TrimSpace(c.GetHeader(hostedAccessHeader)); key != "" {
+		return key
+	}
+	if key := strings.TrimSpace(c.GetHeader("X-MCP-API-Key")); key != "" {
+		return key
+	}
+	return ""
+}
+
+func secureStringEquals(a, b string) bool {
+	if len(a) == 0 || len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+func hostedCallerIdentityFromRequest(c *gin.Context) (string, string) {
+	callerID := strings.TrimSpace(c.GetHeader("X-Make-MCP-Caller-Id"))
+	tenantID := strings.TrimSpace(c.GetHeader("X-Make-MCP-Tenant-Id"))
+	return callerID, tenantID
+}
+
+func (h *Handler) requireHostedAccessBoundary(c *gin.Context, server *models.Server) bool {
+	if server == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
+		return false
+	}
+	mode, err := normalizeHostedAuthMode(server.HostedAuthMode)
+	if err != nil {
+		mode = hostedAuthModeNoAuth
+	}
+
+	// Check 1: bearer token auth (independent axis)
+	if mode == hostedAuthModeBearerToken {
+		accessKey, err := h.db.EnsureServerHostedAccessKey(c.Request.Context(), server.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load hosted access policy"})
+			return false
+		}
+		provided := hostedAccessTokenFromRequest(c)
+		if provided == "" {
+			c.Header("WWW-Authenticate", `Bearer realm="make-mcp", error="invalid_token", error_description="access token required for hosted endpoint", scope="mcp:invoke"`)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":       "hosted access token required",
+				"auth_header": fmt.Sprintf("Authorization: Bearer <token> or %s: <token>", hostedAccessHeader),
+				"auth_mode":   hostedAuthModeBearerToken,
+			})
+			return false
+		}
+		if !secureStringEquals(accessKey, provided) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid hosted access token"})
+			return false
+		}
+	}
+
+	// Check 2: caller identity requirement (independent axis)
+	if server.RequireCallerIdentity {
+		callerID, _ := hostedCallerIdentityFromRequest(c)
+		if callerID == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":      "caller identity required",
+				"hint":       "set X-Make-MCP-Caller-Id header in your MCP client config",
+				"header_key": "X-Make-MCP-Caller-Id",
+			})
+			return false
+		}
+	}
+
+	return true
 }
 
 func (h *Handler) proxyToHostedContainer(c *gin.Context, cfg *hosted.ContainerConfig) {
@@ -1916,8 +2077,10 @@ func (h *Handler) HostedMCPGet(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
 		return
 	}
-	serverDB, _ := h.db.GetServer(c.Request.Context(), target.ServerID)
-	observabilityEnv := h.hostedObservabilityEnv(c, serverDB)
+	if !h.requireHostedAccessBoundary(c, target.Server) {
+		return
+	}
+	observabilityEnv := h.hostedObservabilityEnv(c, target.Server)
 	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv, -1)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
@@ -1937,8 +2100,10 @@ func (h *Handler) HostedMCPPost(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
 		return
 	}
-	serverDB, _ := h.db.GetServer(c.Request.Context(), target.ServerID)
-	observabilityEnv := h.hostedObservabilityEnv(c, serverDB)
+	if !h.requireHostedAccessBoundary(c, target.Server) {
+		return
+	}
+	observabilityEnv := h.hostedObservabilityEnv(c, target.Server)
 	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv, -1)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
@@ -2160,6 +2325,11 @@ func (h *Handler) MarketplaceHostedDeploy(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": idleErr.Error()})
 		return
 	}
+	hostedAuthMode, authModeErr := normalizeHostedAuthMode(req.HostedAuthMode)
+	if authModeErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": authModeErr.Error()})
+		return
+	}
 
 	source, err := h.db.GetServer(c.Request.Context(), id)
 	if err != nil {
@@ -2195,6 +2365,18 @@ func (h *Handler) MarketplaceHostedDeploy(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if err := h.db.UpdateServerHostedAuthMode(c.Request.Context(), virtualServer.ID, hostedAuthMode); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist hosted auth mode"})
+		return
+	}
+	virtualServer.HostedAuthMode = hostedAuthMode
+	if req.RequireCallerIdentity != nil {
+		if err := h.db.UpdateServerRequireCallerIdentity(c.Request.Context(), virtualServer.ID, *req.RequireCallerIdentity); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist caller identity setting"})
+			return
+		}
+		virtualServer.RequireCallerIdentity = *req.RequireCallerIdentity
 	}
 
 	// Align snapshot identity with virtual hosted server so endpoint + manifest details are user-local.
@@ -3603,6 +3785,11 @@ func (h *Handler) HostedDeployComposition(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": idleErr.Error()})
 		return
 	}
+	hostedAuthMode, authModeErr := normalizeHostedAuthMode(req.HostedAuthMode)
+	if authModeErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": authModeErr.Error()})
+		return
+	}
 
 	servers, err := h.loadCompositionServers(c, comp)
 	if err != nil {
@@ -3626,6 +3813,18 @@ func (h *Handler) HostedDeployComposition(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if err := h.db.UpdateServerHostedAuthMode(c.Request.Context(), virtualServer.ID, hostedAuthMode); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist hosted auth mode"})
+		return
+	}
+	virtualServer.HostedAuthMode = hostedAuthMode
+	if req.RequireCallerIdentity != nil {
+		if err := h.db.UpdateServerRequireCallerIdentity(c.Request.Context(), virtualServer.ID, *req.RequireCallerIdentity); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist caller identity setting"})
+			return
+		}
+		virtualServer.RequireCallerIdentity = *req.RequireCallerIdentity
 	}
 	combined.ID = virtualServer.ID
 	combined.Name = virtualServer.Name

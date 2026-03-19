@@ -1332,6 +1332,7 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
                   <option value="json">Default (JSON)</option>
                   <option value="table">Table</option>
                   <option value="card">Card</option>
+                  <option value="image">Image</option>
                 </select>
                 <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
                   Table: object or array as table. Card: single object with a main text field (e.g. joke, quote) shown in large type.

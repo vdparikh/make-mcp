@@ -2,6 +2,8 @@ package database
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -245,6 +247,11 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_tool_test_presets_tool_user ON tool_test_presets(tool_id, user_id)`,
 		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS env_profiles JSONB`,
+		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS hosted_access_key VARCHAR(128)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_servers_hosted_access_key ON servers(hosted_access_key) WHERE hosted_access_key IS NOT NULL`,
+		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS hosted_auth_mode VARCHAR(32)`,
+		`UPDATE servers SET hosted_auth_mode = 'no_auth' WHERE hosted_auth_mode IS NULL OR TRIM(hosted_auth_mode) = '' OR hosted_auth_mode = 'caller_identity' OR hosted_auth_mode = 'auto_flow'`,
+		`ALTER TABLE servers ADD COLUMN IF NOT EXISTS require_caller_identity BOOLEAN NOT NULL DEFAULT false`,
 		`CREATE TABLE IF NOT EXISTS hosted_sessions (
 			id UUID PRIMARY KEY,
 			user_id UUID NOT NULL,
@@ -367,11 +374,14 @@ func (db *DB) GetServer(ctx context.Context, id string) (*models.Server, error) 
 	var hostedVirtual *bool
 
 	var obsKey *string
+	var hostedAccessKey *string
+	var hostedAuthMode *string
+	var requireCallerIdentity *bool
 	var envProfiles []byte
 	err := db.pool.QueryRow(ctx,
-		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, hosted_virtual, auth_config, observability_reporting_key, env_profiles, created_at, updated_at
+		`SELECT id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, hosted_virtual, auth_config, observability_reporting_key, hosted_access_key, hosted_auth_mode, require_caller_identity, env_profiles, created_at, updated_at
 		 FROM servers WHERE id = $1`, id).
-		Scan(&server.ID, &server.Name, &server.Description, &server.Version, &icon, &status, &publishedAt, &latestVersion, &ownerID, &isPublic, &downloads, &hostedVirtual, &authConfig, &obsKey, &envProfiles, &server.CreatedAt, &server.UpdatedAt)
+		Scan(&server.ID, &server.Name, &server.Description, &server.Version, &icon, &status, &publishedAt, &latestVersion, &ownerID, &isPublic, &downloads, &hostedVirtual, &authConfig, &obsKey, &hostedAccessKey, &hostedAuthMode, &requireCallerIdentity, &envProfiles, &server.CreatedAt, &server.UpdatedAt)
 
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -414,6 +424,15 @@ func (db *DB) GetServer(ctx context.Context, id string) (*models.Server, error) 
 	}
 	if obsKey != nil {
 		server.ObservabilityReportingKey = *obsKey
+	}
+	if hostedAccessKey != nil {
+		server.HostedAccessKey = *hostedAccessKey
+	}
+	if hostedAuthMode != nil {
+		server.HostedAuthMode = *hostedAuthMode
+	}
+	if requireCallerIdentity != nil {
+		server.RequireCallerIdentity = *requireCallerIdentity
 	}
 	if envProfiles != nil {
 		server.EnvProfiles = envProfiles
@@ -965,6 +984,46 @@ func (db *DB) EnsureServerObservabilityKey(ctx context.Context, serverID string)
 		return "", err
 	}
 	return key, nil
+}
+
+func generateHostedAccessKey() (string, error) {
+	// 32 random bytes => 43-char URL-safe token.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// EnsureServerHostedAccessKey sets hosted_access_key for the server if missing, and returns it.
+func (db *DB) EnsureServerHostedAccessKey(ctx context.Context, serverID string) (string, error) {
+	var existing *string
+	err := db.pool.QueryRow(ctx, `SELECT hosted_access_key FROM servers WHERE id = $1`, serverID).Scan(&existing)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil && *existing != "" {
+		return *existing, nil
+	}
+	key, err := generateHostedAccessKey()
+	if err != nil {
+		return "", err
+	}
+	_, err = db.pool.Exec(ctx, `UPDATE servers SET hosted_access_key = $1, updated_at = NOW() WHERE id = $2`, key, serverID)
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+func (db *DB) UpdateServerHostedAuthMode(ctx context.Context, serverID, hostedAuthMode string) error {
+	_, err := db.pool.Exec(ctx, `UPDATE servers SET hosted_auth_mode = $2, updated_at = NOW() WHERE id = $1`, serverID, hostedAuthMode)
+	return err
+}
+
+func (db *DB) UpdateServerRequireCallerIdentity(ctx context.Context, serverID string, required bool) error {
+	_, err := db.pool.Exec(ctx, `UPDATE servers SET require_caller_identity = $2, updated_at = NOW() WHERE id = $1`, serverID, required)
+	return err
 }
 
 // ListRuntimeExecutionsForUser returns runtime tool executions for all servers owned by the user, with optional server_id, tool_name, client_user_id, client_agent filters.

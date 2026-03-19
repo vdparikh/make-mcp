@@ -32,6 +32,9 @@ type Server struct {
 	SecurityScore             *int            `json:"security_score,omitempty"`              // 0-100, set for marketplace list/detail
 	SecurityGrade             *string         `json:"security_grade,omitempty"`              // A/B/C/D/F
 	ObservabilityReportingKey string          `json:"observability_reporting_key,omitempty"` // key for runtime to report events
+	HostedAccessKey           string          `json:"-"`                                     // secret key for hosted endpoint access boundary
+	HostedAuthMode            string          `json:"hosted_auth_mode,omitempty"`            // "bearer_token" or "no_auth"
+	RequireCallerIdentity    bool            `json:"require_caller_identity,omitempty"`     // independent toggle for X-Make-MCP-Caller-Id
 	CreatedAt                 time.Time       `json:"created_at"`
 	UpdatedAt                 time.Time       `json:"updated_at"`
 	Tools                     []Tool          `json:"tools,omitempty"`

@@ -19,6 +19,7 @@ import {
   listServers,
   marketplaceHostedDeploy,
   marketplaceHostedStatus,
+  type HostedAuthMode,
   type HostedStatusResponse,
 } from '../services/api';
 import type { Server, ServerComposition } from '../types';
@@ -46,6 +47,8 @@ export default function DeployFlowPage() {
   const [localRuntime, setLocalRuntime] = useState<LocalRuntime>('nodejs');
   const [envProfile, setEnvProfile] = useState<EnvProfile>('');
   const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState<number>(0);
+  const [hostedAuthMode, setHostedAuthMode] = useState<HostedAuthMode>('no_auth');
+  const [requireCallerIdentity, setRequireCallerIdentity] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const [publishingHosted, setPublishingHosted] = useState(false);
@@ -73,6 +76,7 @@ export default function DeployFlowPage() {
   const breadcrumbLabel = target === 'composition' ? 'Compositions' : target === 'marketplace' ? 'Marketplace' : 'Deploy';
   const envLabel = envProfile ? envProfile.toUpperCase() : 'Use .env at runtime';
   const idleLabel = idleTimeoutMinutes > 0 ? `${idleTimeoutMinutes} min` : 'Never auto-shutdown';
+  const hostedAuthLabel = hostedAuthMode === 'bearer_token' ? 'Bearer token' : 'No auth';
 
   useEffect(() => {
     if (!hasSelectedTarget) {
@@ -189,6 +193,12 @@ export default function DeployFlowPage() {
       }
 
       setHostedResult(normalized || { running: false });
+      if (normalized?.hosted_auth_mode) {
+        setHostedAuthMode(normalized.hosted_auth_mode as HostedAuthMode);
+      }
+      if (normalized?.require_caller_identity !== undefined) {
+        setRequireCallerIdentity(normalized.require_caller_identity);
+      }
     } catch {
       setHostedResult(null);
     } finally {
@@ -258,11 +268,11 @@ export default function DeployFlowPage() {
     setPublishingHosted(true);
     try {
       if (target === 'server') {
-        await hostedPublish(targetId, undefined, envProfile || undefined, idleTimeoutMinutes);
+        await hostedPublish(targetId, undefined, envProfile || undefined, idleTimeoutMinutes, hostedAuthMode, requireCallerIdentity);
       } else if (target === 'marketplace') {
-        await marketplaceHostedDeploy(targetId, envProfile || undefined, idleTimeoutMinutes);
+        await marketplaceHostedDeploy(targetId, envProfile || undefined, idleTimeoutMinutes, hostedAuthMode, requireCallerIdentity);
       } else {
-        await compositionHostedDeploy(targetId, envProfile || undefined, idleTimeoutMinutes);
+        await compositionHostedDeploy(targetId, envProfile || undefined, idleTimeoutMinutes, hostedAuthMode, requireCallerIdentity);
       }
       toast.success('Hosted MCP published');
       await refreshHostedStatus();
@@ -349,6 +359,25 @@ export default function DeployFlowPage() {
   };
 
   const hostedManifest = (hostedResult?.manifest ?? null) as Record<string, unknown> | null;
+
+  const oneClickLinks = useMemo(() => {
+    if (!hostedResult?.mcp_config) return null;
+    try {
+      const parsed = JSON.parse(hostedResult.mcp_config);
+      const servers = parsed.mcpServers || {};
+      const serverName = Object.keys(servers)[0];
+      if (!serverName) return null;
+      const serverConfig = servers[serverName];
+      const configB64 = btoa(JSON.stringify(serverConfig));
+      const cursorLink = `cursor://anysphere.cursor-deeplink/mcp/install?name=${encodeURIComponent(serverName)}&config=${configB64}`;
+      const vscodeConfig = JSON.stringify({ name: serverName, type: 'sse', url: serverConfig.url, ...(serverConfig.headers ? { headers: serverConfig.headers } : {}) });
+      const vscodeLink = `vscode:mcp/install?${encodeURIComponent(vscodeConfig)}`;
+      const vscodeInsidersLink = `vscode-insiders:mcp/install?${encodeURIComponent(vscodeConfig)}`;
+      return { serverName, serverConfig, cursorLink, vscodeLink, vscodeInsidersLink };
+    } catch {
+      return null;
+    }
+  }, [hostedResult?.mcp_config]);
 
   const filteredTargetOptions = targetPickerOptions.filter((option) => targetPickerType === 'all' || option.type === targetPickerType);
 
@@ -518,27 +547,106 @@ export default function DeployFlowPage() {
             </div>
           </div>
 
-          <div className="deploy-flow-hosted-config-row">
-            <div className="form-group deploy-flow-env-group">
-              <label className="form-label">Idle shutdown</label>
-              <select
-                className="form-control"
-                value={String(idleTimeoutMinutes)}
-                onChange={(e) => setIdleTimeoutMinutes(Number(e.target.value || 0))}
-              >
-                <option value="0">Never (manual stop only)</option>
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
-                <option value="60">1 hour</option>
-                <option value="180">3 hours</option>
-                <option value="720">12 hours</option>
-                <option value="1440">24 hours</option>
-              </select>
-              <p className="deploy-flow-help mt-1 ms-2">Stops hosted container if no requests are received during this window.</p>
+          <div className="deploy-publish-settings">
+            <div className="deploy-publish-settings-header">
+              <i className="bi bi-shield-lock"></i>
+              <div>
+                <h4>Access &amp; Security</h4>
+                <p>Control who can call your hosted MCP server and how requests are attributed.</p>
+              </div>
             </div>
-            <div className="deploy-flow-summary-card">
-              <span className="deploy-flow-meta-label">Current hosted policy</span>
-              <strong>{idleLabel}</strong>
+
+            <div className="deploy-publish-grid">
+              <div className="deploy-publish-card">
+                <div className="deploy-publish-card-header">
+                  <i className="bi bi-key"></i>
+                  <span>Endpoint protection</span>
+                </div>
+                <p className="deploy-publish-card-desc">
+                  {hostedAuthMode === 'bearer_token'
+                    ? 'Requests must include a Bearer token. The token is auto-generated and included in your MCP config.'
+                    : 'Endpoint is open — anyone with the URL can call tools. Best for internal/dev use.'}
+                </p>
+                <div className="deploy-publish-toggle-row">
+                  <button
+                    type="button"
+                    className={`deploy-publish-pill ${hostedAuthMode === 'no_auth' ? 'active' : ''}`}
+                    onClick={() => setHostedAuthMode('no_auth')}
+                  >
+                    <i className="bi bi-unlock"></i> No auth
+                  </button>
+                  <button
+                    type="button"
+                    className={`deploy-publish-pill ${hostedAuthMode === 'bearer_token' ? 'active' : ''}`}
+                    onClick={() => setHostedAuthMode('bearer_token')}
+                  >
+                    <i className="bi bi-lock"></i> Bearer token
+                  </button>
+                </div>
+              </div>
+
+              <div className="deploy-publish-card">
+                <div className="deploy-publish-card-header">
+                  <i className="bi bi-person-badge"></i>
+                  <span>Caller identity</span>
+                </div>
+                <p className="deploy-publish-card-desc">
+                  {requireCallerIdentity
+                    ? 'Every request must include X-Make-MCP-Caller-Id. Enables per-user attribution in observability.'
+                    : 'Caller identity is optional. Enable this to attribute tool calls to individual users.'}
+                </p>
+                <label className="deploy-publish-switch">
+                  <input
+                    type="checkbox"
+                    checked={requireCallerIdentity}
+                    onChange={(e) => setRequireCallerIdentity(e.target.checked)}
+                  />
+                  <span className="deploy-publish-switch-slider" />
+                  <span className="deploy-publish-switch-label">
+                    {requireCallerIdentity ? 'Required' : 'Optional'}
+                  </span>
+                </label>
+              </div>
+
+              <div className="deploy-publish-card">
+                <div className="deploy-publish-card-header">
+                  <i className="bi bi-clock-history"></i>
+                  <span>Idle shutdown</span>
+                </div>
+                <p className="deploy-publish-card-desc">
+                  {idleTimeoutMinutes > 0
+                    ? `Container stops after ${idleTimeoutMinutes} min of inactivity and restarts on next request.`
+                    : 'Container runs indefinitely. Stop manually from Observability > Sessions.'}
+                </p>
+                <select
+                  className="form-control form-control-sm"
+                  value={String(idleTimeoutMinutes)}
+                  onChange={(e) => setIdleTimeoutMinutes(Number(e.target.value || 0))}
+                >
+                  <option value="0">Never (manual stop only)</option>
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="60">1 hour</option>
+                  <option value="180">3 hours</option>
+                  <option value="720">12 hours</option>
+                  <option value="1440">24 hours</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="deploy-publish-policy-strip">
+              <span className="deploy-publish-policy-chip">
+                <i className={`bi ${hostedAuthMode === 'bearer_token' ? 'bi-lock' : 'bi-unlock'}`}></i>
+                {hostedAuthLabel}
+              </span>
+              <span className="deploy-publish-policy-chip">
+                <i className={`bi ${requireCallerIdentity ? 'bi-person-check' : 'bi-person'}`}></i>
+                Caller ID: {requireCallerIdentity ? 'Required' : 'Optional'}
+              </span>
+              <span className="deploy-publish-policy-chip">
+                <i className="bi bi-clock"></i>
+                {idleLabel}
+              </span>
             </div>
           </div>
 
@@ -565,15 +673,48 @@ export default function DeployFlowPage() {
             </div>
           )}
 
+          {oneClickLinks && (
+            <div className="deploy-oneclick-section">
+              <div className="deploy-oneclick-header">
+                <i className="bi bi-lightning-charge-fill"></i>
+                <div>
+                  <h4>One-click install</h4>
+                  <p>Add this MCP server to your IDE in one click. No manual config editing needed.</p>
+                </div>
+              </div>
+              <div className="deploy-oneclick-buttons">
+                <a href={oneClickLinks.cursorLink} className="deploy-oneclick-btn deploy-oneclick-cursor" title="Install in Cursor">
+                  <svg width="18" height="18" viewBox="0 0 100 100" fill="currentColor"><path d="M50 0 L95 25 L95 75 L50 100 L5 75 L5 25 Z" opacity="0.15"/><path d="M30 25 L75 50 L30 75 Z"/></svg>
+                  Install in Cursor
+                </a>
+                <a href={oneClickLinks.vscodeLink} className="deploy-oneclick-btn deploy-oneclick-vscode" title="Install in VS Code">
+                  <svg width="18" height="18" viewBox="0 0 100 100" fill="currentColor"><path d="M71.5 99.1l23.4-11.6V13l-23.4-12L2.2 39.6 0 42.5v15.9l2.2 2.5 69.3 38.2zM29.5 70.2L17.7 60.4l11.8-9.5v19.3zM71.5 76L42.4 60l29.1-16V76z" opacity="0.9"/></svg>
+                  Install in VS Code
+                </a>
+                <a href={oneClickLinks.vscodeInsidersLink} className="deploy-oneclick-btn deploy-oneclick-vscode-insiders" title="Install in VS Code Insiders">
+                  <svg width="18" height="18" viewBox="0 0 100 100" fill="currentColor"><path d="M71.5 99.1l23.4-11.6V13l-23.4-12L2.2 39.6 0 42.5v15.9l2.2 2.5 69.3 38.2zM29.5 70.2L17.7 60.4l11.8-9.5v19.3zM71.5 76L42.4 60l29.1-16V76z" opacity="0.9"/></svg>
+                  VS Code Insiders
+                </a>
+              </div>
+              <p className="deploy-oneclick-hint">
+                <i className="bi bi-info-circle"></i>
+                Click a button above — your IDE will open and prompt you to confirm the installation.
+              </p>
+            </div>
+          )}
+
           <div className="deploy-flow-collapsible-list">
             <button type="button" className="deploy-flow-collapse-trigger" onClick={() => setShowMcpConfig((v) => !v)}>
-              <span><i className="bi bi-terminal"></i> MCP config (for your IDE)</span>
+              <span><i className="bi bi-terminal"></i> Manual config (JSON)</span>
               <i className={`bi ${showMcpConfig ? 'bi-chevron-up' : 'bi-chevron-down'}`}></i>
             </button>
             {showMcpConfig && (
               <div className="deploy-flow-collapse-body">
                 {hostedResult?.mcp_config ? (
                   <>
+                    <p className="deploy-flow-help mb-2">
+                      Paste into your IDE's <code>mcp.json</code>, <code>mcp_config.json</code>, or <code>claude_desktop_config.json</code>.
+                    </p>
                     <div className="deploy-flow-inline-actions">
                       <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => copyText(hostedResult.mcp_config || '', 'MCP config copied')}>
                         <i className="bi bi-clipboard"></i>
@@ -607,6 +748,8 @@ export default function DeployFlowPage() {
                   <span><strong>PIDs limit:</strong> {hostedResult?.pids_limit || 128}</span>
                   <span><strong>Network:</strong> {hostedResult?.network_scope || '127.0.0.1:random-port -> 3000/tcp'}</span>
                   <span><strong>Idle shutdown:</strong> {hostedResult?.idle_timeout_minutes ? `${hostedResult.idle_timeout_minutes} min` : 'Disabled'}</span>
+                  <span><strong>Auth:</strong> {hostedResult?.hosted_auth_mode === 'bearer_token' ? 'Bearer token' : 'No auth'}</span>
+                  <span><strong>Caller ID:</strong> {hostedResult?.require_caller_identity ? 'Required' : 'Optional'}</span>
                 </div>
               </div>
             )}

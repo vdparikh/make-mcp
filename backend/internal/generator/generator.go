@@ -645,7 +645,10 @@ async function reportObservabilityEvent(
   durationMs: number,
   success: boolean,
   errorMessage: string,
-  repairSuggestion: string
+  repairSuggestion: string,
+  callerIdentity?: string,
+  tenantIdentity?: string,
+  clientAgent?: string
 ) {
   if (!MCP_OBSERVABILITY_ENDPOINT || !MCP_OBSERVABILITY_KEY) return;
   try {
@@ -656,8 +659,15 @@ async function reportObservabilityEvent(
       error: errorMessage,
       repair_suggestion: repairSuggestion,
     };
-    if (MCP_OBSERVABILITY_USER_ID) ev.client_user_id = MCP_OBSERVABILITY_USER_ID;
-    if (MCP_OBSERVABILITY_CLIENT_AGENT) ev.client_agent = MCP_OBSERVABILITY_CLIENT_AGENT;
+    let resolvedCaller = (callerIdentity || "").trim();
+    const resolvedTenant = (tenantIdentity || "").trim();
+    if (!resolvedCaller) resolvedCaller = MCP_OBSERVABILITY_USER_ID;
+    if (resolvedCaller && resolvedTenant) {
+      resolvedCaller = resolvedTenant + "/" + resolvedCaller;
+    }
+    if (resolvedCaller) ev.client_user_id = resolvedCaller.slice(0, 200);
+    const resolvedAgent = (clientAgent || "").trim() || MCP_OBSERVABILITY_CLIENT_AGENT;
+    if (resolvedAgent) ev.client_agent = resolvedAgent.slice(0, 120);
     if (MCP_OBSERVABILITY_USER_TOKEN) ev.client_token = MCP_OBSERVABILITY_USER_TOKEN;
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), 3000);
@@ -710,6 +720,7 @@ const tools: GeneratedTool[] = [
 {{end}}];
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+type CallContext = { callerIdentity?: string; tenantIdentity?: string; clientAgent?: string };
 const hostedSessions = new Map<string, import("http").ServerResponse>();
 
 function listToolsResult() {
@@ -722,7 +733,7 @@ function listToolsResult() {
   }));
 }
 
-async function executeToolCall(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+async function executeToolCall(name: string, args: Record<string, unknown>, callCtx: CallContext = {}): Promise<ToolResult> {
   const argsStr = JSON.stringify(args || {});
   const argsPreview = argsStr.length > 200 ? argsStr.slice(0, 200) + "..." : argsStr;
   mcpLog("Tool called: " + name + " | args: " + argsPreview);
@@ -788,14 +799,14 @@ async function executeToolCall(name: string, args: Record<string, unknown>): Pro
         text = JSON.stringify(mcpApp, null, 2);
       }
     }
-    reportObservabilityEvent(name, Date.now() - callStart, true, "", "").catch(() => {});
+    reportObservabilityEvent(name, Date.now() - callStart, true, "", "", callCtx.callerIdentity, callCtx.tenantIdentity, callCtx.clientAgent).catch(() => {});
     return { content: [{ type: "text", text }] };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const durationMs = Date.now() - callStart;
     mcpLog("Tool " + name + " failed after " + durationMs + "ms: " + errorMessage);
     const repairSuggestion = suggestRepair(errorMessage);
-    reportObservabilityEvent(name, durationMs, false, errorMessage, repairSuggestion).catch(() => {});
+    reportObservabilityEvent(name, durationMs, false, errorMessage, repairSuggestion, callCtx.callerIdentity, callCtx.tenantIdentity, callCtx.clientAgent).catch(() => {});
     return {
       content: [{ type: "text", text: "Error executing " + name + ": " + errorMessage }],
       isError: true,
@@ -810,7 +821,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = (request as { params: { name: string; arguments?: unknown } }).params;
-  return executeToolCall(name, (args || {}) as Record<string, unknown>);
+  return executeToolCall(name, (args || {}) as Record<string, unknown>, {});
 });
 
 function getHeader(req: import("http").IncomingMessage, key: string): string {
@@ -923,7 +934,10 @@ async function runHTTPServer(): Promise<void> {
         const toolName = typeof params.name === "string" ? params.name : "";
         const rawArgs = params.arguments;
         const toolArgs = (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)) ? rawArgs as Record<string, unknown> : {};
-        const toolResult = await executeToolCall(toolName, toolArgs);
+        const callerIdentity = getHeader(req, "x-make-mcp-caller-id");
+        const tenantIdentity = getHeader(req, "x-make-mcp-tenant-id");
+        const clientAgent = getHeader(req, "user-agent");
+        const toolResult = await executeToolCall(toolName, toolArgs, { callerIdentity, tenantIdentity, clientAgent });
         responsePayload = {
           jsonrpc: "2.0",
           id,

@@ -166,7 +166,7 @@ Add to your MCP client config:
 
 ## Hosted Deploy Architecture
 
-Make MCP supports hosted MCP deployment from the Deploy modal via **Publish MCP**.
+Make MCP supports hosted MCP deployment from the Deploy page via **Publish MCP**.
 
 - **Hosted endpoint**: `http(s)://<host>/api/users/<user_id>/<server_slug>` (versionless URL)
 - **Request path**: client `GET/POST` -> backend hosted route -> reverse proxy -> managed container
@@ -176,6 +176,9 @@ Make MCP supports hosted MCP deployment from the Deploy modal via **Publish MCP*
 - **Runtime source**: generated server files are written under `backend/generated-servers/<user>/<server>/<hosted-snapshot>/` and mounted into the container
 - **Observability**: backend injects runtime env (`MCP_OBSERVABILITY_*`) into hosted containers; for URL-based hosted servers, container env is the source of truth
 - **Manifest**: each hosted snapshot includes a formal `manifest.json` in its generated folder (runtime/image/tools/auth/resources/prompts/observability)
+- **Access model**: hosted publish uses two independent controls:
+  - `hosted_auth_mode`: `bearer_token` or `no_auth`
+  - `require_caller_identity`: boolean toggle requiring `X-Make-MCP-Caller-Id` (and optional tenant id) for per-caller attribution
 
 In the Deploy UI, Hosted status shows explicit runtime metadata:
 
@@ -183,6 +186,16 @@ In the Deploy UI, Hosted status shows explicit runtime metadata:
 - container started-at time
 - last ensured time
 - hosted URL and MCP config
+
+### One-Click MCP Client Install
+
+For hosted runtimes, Deploy now offers one-click installation for supported IDE clients:
+
+- **Cursor** via deep link (`cursor://anysphere.cursor-deeplink/mcp/install?...`)
+- **VS Code** via protocol activation (`vscode:mcp/install?...`)
+- **VS Code Insiders** via protocol activation (`vscode-insiders:mcp/install?...`)
+
+Manual JSON config copy remains available for clients that do not support deep-link install flows.
 
 Example hosted manifest:
 
