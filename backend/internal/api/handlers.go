@@ -577,7 +577,7 @@ func (h *Handler) resolveTryTargetRuntime(c *gin.Context, userID, targetType, ta
 		return nil, http.StatusInternalServerError, fmt.Errorf("parse hosted snapshot: %w", err)
 	}
 	observabilityEnv := h.hostedObservabilityEnv(c, runtimeServer)
-	cfg, err := h.hostedMgr.EnsureContainer(ctx, userID, runtimeServerID, sv.Version, &snap, observabilityEnv)
+	cfg, err := h.hostedMgr.EnsureContainer(ctx, userID, runtimeServerID, sv.Version, &snap, observabilityEnv, -1)
 	if err != nil {
 		return nil, http.StatusBadGateway, fmt.Errorf("ensure hosted runtime: %w", err)
 	}
@@ -1345,7 +1345,14 @@ func (h *Handler) PublishServer(c *gin.Context) {
 
 // HostedPublishRequest is the body for hosted-publish.
 type HostedPublishRequest struct {
-	Version string `json:"version"` // deprecated; ignored for hosted runtime selection
+	Version            string `json:"version"` // deprecated; ignored for hosted runtime selection
+	EnvProfile         string `json:"env_profile,omitempty"`
+	IdleTimeoutMinutes *int   `json:"idle_timeout_minutes,omitempty"`
+}
+
+type HostedDeployConfig struct {
+	EnvProfile         string `json:"env_profile,omitempty"`
+	IdleTimeoutMinutes *int   `json:"idle_timeout_minutes,omitempty"`
 }
 
 // HostedPublishResponse is returned after publishing to hosted.
@@ -1359,25 +1366,42 @@ type HostedPublishResponse struct {
 }
 
 type HostedStatusResponse struct {
-	Running         bool            `json:"running"`
-	UserID          string          `json:"user_id,omitempty"`
-	ServerID        string          `json:"server_id,omitempty"`
-	ServerSlug      string          `json:"server_slug,omitempty"`
-	Version         string          `json:"version,omitempty"`
-	SnapshotID      string          `json:"snapshot_id,omitempty"`
-	SnapshotVersion string          `json:"snapshot_version,omitempty"`
-	StartedAt       string          `json:"started_at,omitempty"`
-	LastEnsuredAt   string          `json:"last_ensured_at,omitempty"`
-	Endpoint        string          `json:"endpoint,omitempty"`
-	MCPConfig       string          `json:"mcp_config,omitempty"`
-	Manifest        json.RawMessage `json:"manifest,omitempty"`
-	ContainerID     string          `json:"container_id,omitempty"`
-	HostPort        string          `json:"host_port,omitempty"`
+	Running            bool            `json:"running"`
+	UserID             string          `json:"user_id,omitempty"`
+	ServerID           string          `json:"server_id,omitempty"`
+	ServerSlug         string          `json:"server_slug,omitempty"`
+	Version            string          `json:"version,omitempty"`
+	SnapshotID         string          `json:"snapshot_id,omitempty"`
+	SnapshotVersion    string          `json:"snapshot_version,omitempty"`
+	StartedAt          string          `json:"started_at,omitempty"`
+	LastEnsuredAt      string          `json:"last_ensured_at,omitempty"`
+	Endpoint           string          `json:"endpoint,omitempty"`
+	MCPConfig          string          `json:"mcp_config,omitempty"`
+	Manifest           json.RawMessage `json:"manifest,omitempty"`
+	ContainerID        string          `json:"container_id,omitempty"`
+	HostPort           string          `json:"host_port,omitempty"`
+	Runtime            string          `json:"runtime,omitempty"`
+	Image              string          `json:"image,omitempty"`
+	MemoryMB           int64           `json:"memory_mb,omitempty"`
+	NanoCPUs           int64           `json:"nano_cpus,omitempty"`
+	PidsLimit          int64           `json:"pids_limit,omitempty"`
+	IdleTimeoutMinutes int             `json:"idle_timeout_minutes,omitempty"`
+	NetworkScope       string          `json:"network_scope,omitempty"`
 }
 
 type HostedSessionListItem struct {
 	models.HostedSession
 	ServerName string `json:"server_name,omitempty"`
+}
+
+func normalizeIdleTimeoutMinutes(value *int) (int, error) {
+	if value == nil {
+		return 0, nil
+	}
+	if *value < 0 || *value > 10080 {
+		return 0, fmt.Errorf("idle_timeout_minutes must be between 0 and 10080")
+	}
+	return *value, nil
 }
 
 // HostedPublish publishes the latest hosted snapshot and makes it available at /api/users/:user_id/:server_slug.
@@ -1399,6 +1423,11 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 
 	var req HostedPublishRequest
 	_ = c.ShouldBindJSON(&req)
+	idleTimeoutMinutes, idleErr := normalizeIdleTimeoutMinutes(req.IdleTimeoutMinutes)
+	if idleErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": idleErr.Error()})
+		return
+	}
 
 	// Keep request backward-compatible, but hosted deployment no longer uses user-provided version.
 	// Also repair older data where hosted snapshots polluted servers.latest_version.
@@ -1435,7 +1464,7 @@ func (h *Handler) HostedPublish(c *gin.Context) {
 	}
 	observabilityEnv := h.hostedObservabilityEnv(c, server)
 	if h.hostedMgr != nil {
-		if cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, server.ID, hostedVersion, &snapshotServer, observabilityEnv); err != nil {
+		if cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, server.ID, hostedVersion, &snapshotServer, observabilityEnv, idleTimeoutMinutes); err != nil {
 			// Log but do not fail the publish.
 			fmt.Printf("HostedPublish: failed to ensure container for user=%s server=%s: %v\n", userID, server.ID, err)
 		} else {
@@ -1601,21 +1630,78 @@ func (h *Handler) buildHostedStatusResponse(c *gin.Context, server *models.Serve
 		snapshotVersion = sv.Version
 	}
 	manifest, _ := loadHostedManifest(userID, server.ID, cfg.Version)
+	runtimeName := "docker"
+	imageName := "node:20-alpine"
+	var memoryMB int64 = 512
+	var nanoCPUs int64 = 500_000_000
+	var pidsLimit int64 = 128
+	networkScope := "127.0.0.1:random-port -> 3000/tcp"
+	idleTimeoutMinutes := cfg.IdleTimeoutMinutes
+	if len(manifest) > 0 {
+		var m map[string]interface{}
+		if err := json.Unmarshal(manifest, &m); err == nil {
+			if v, ok := m["runtime"].(string); ok && strings.TrimSpace(v) != "" {
+				runtimeName = v
+			}
+			if v, ok := m["image"].(string); ok && strings.TrimSpace(v) != "" {
+				imageName = v
+			}
+			if meta, ok := m["metadata"].(map[string]interface{}); ok {
+				if idleTimeoutMinutes == 0 {
+					switch t := meta["idle_timeout_minutes"].(type) {
+					case float64:
+						if t >= 0 {
+							idleTimeoutMinutes = int(t)
+						}
+					case int:
+						if t >= 0 {
+							idleTimeoutMinutes = t
+						}
+					}
+				}
+				if resources, ok := meta["resources"].(map[string]interface{}); ok {
+					if v, ok := resources["memory_mb"].(float64); ok && v > 0 {
+						memoryMB = int64(v)
+					}
+					if v, ok := resources["nano_cpus"].(float64); ok && v > 0 {
+						nanoCPUs = int64(v)
+					}
+					if v, ok := resources["pids_limit"].(float64); ok && v > 0 {
+						pidsLimit = int64(v)
+					}
+				}
+				if network, ok := meta["network"].(map[string]interface{}); ok {
+					bindHost, _ := network["bind_host"].(string)
+					containerPort, _ := network["container_port"].(float64)
+					if bindHost != "" && containerPort > 0 {
+						networkScope = fmt.Sprintf("%s:random-port -> %d/tcp", bindHost, int(containerPort))
+					}
+				}
+			}
+		}
+	}
 	return HostedStatusResponse{
-		Running:         true,
-		UserID:          userID,
-		ServerID:        server.ID,
-		ServerSlug:      slug,
-		Version:         cfg.Version,
-		SnapshotID:      snapshotID,
-		SnapshotVersion: snapshotVersion,
-		StartedAt:       startedAt,
-		LastEnsuredAt:   lastEnsuredAt,
-		Endpoint:        baseURL + "/users/" + userID + "/" + slug,
-		MCPConfig:       string(mcpConfigBytes),
-		Manifest:        manifest,
-		ContainerID:     cfg.ContainerID,
-		HostPort:        cfg.HostPort,
+		Running:            true,
+		UserID:             userID,
+		ServerID:           server.ID,
+		ServerSlug:         slug,
+		Version:            cfg.Version,
+		SnapshotID:         snapshotID,
+		SnapshotVersion:    snapshotVersion,
+		StartedAt:          startedAt,
+		LastEnsuredAt:      lastEnsuredAt,
+		Endpoint:           baseURL + "/users/" + userID + "/" + slug,
+		MCPConfig:          string(mcpConfigBytes),
+		Manifest:           manifest,
+		ContainerID:        cfg.ContainerID,
+		HostPort:           cfg.HostPort,
+		Runtime:            runtimeName,
+		Image:              imageName,
+		MemoryMB:           memoryMB,
+		NanoCPUs:           nanoCPUs,
+		PidsLimit:          pidsLimit,
+		IdleTimeoutMinutes: idleTimeoutMinutes,
+		NetworkScope:       networkScope,
 	}, nil
 }
 
@@ -1832,7 +1918,7 @@ func (h *Handler) HostedMCPGet(c *gin.Context) {
 	}
 	serverDB, _ := h.db.GetServer(c.Request.Context(), target.ServerID)
 	observabilityEnv := h.hostedObservabilityEnv(c, serverDB)
-	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv, -1)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
 		return
@@ -1853,7 +1939,7 @@ func (h *Handler) HostedMCPPost(c *gin.Context) {
 	}
 	serverDB, _ := h.db.GetServer(c.Request.Context(), target.ServerID)
 	observabilityEnv := h.hostedObservabilityEnv(c, serverDB)
-	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), target.UserID, target.ServerID, target.Version, target.Snapshot, observabilityEnv, -1)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
 		return
@@ -2067,6 +2153,13 @@ func (h *Handler) MarketplaceHostedDeploy(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
 		return
 	}
+	var req HostedDeployConfig
+	_ = c.ShouldBindJSON(&req)
+	idleTimeoutMinutes, idleErr := normalizeIdleTimeoutMinutes(req.IdleTimeoutMinutes)
+	if idleErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": idleErr.Error()})
+		return
+	}
 
 	source, err := h.db.GetServer(c.Request.Context(), id)
 	if err != nil {
@@ -2122,7 +2215,7 @@ func (h *Handler) MarketplaceHostedDeploy(c *gin.Context) {
 		return
 	}
 	observabilityEnv := h.hostedObservabilityEnv(c, virtualServer)
-	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, virtualServer.ID, sv.Version, &snapshot, observabilityEnv)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, virtualServer.ID, sv.Version, &snapshot, observabilityEnv, idleTimeoutMinutes)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
 		return
@@ -3503,6 +3596,13 @@ func (h *Handler) HostedDeployComposition(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "hosted manager unavailable"})
 		return
 	}
+	var req HostedDeployConfig
+	_ = c.ShouldBindJSON(&req)
+	idleTimeoutMinutes, idleErr := normalizeIdleTimeoutMinutes(req.IdleTimeoutMinutes)
+	if idleErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": idleErr.Error()})
+		return
+	}
 
 	servers, err := h.loadCompositionServers(c, comp)
 	if err != nil {
@@ -3542,7 +3642,7 @@ func (h *Handler) HostedDeployComposition(c *gin.Context) {
 		return
 	}
 	observabilityEnv := h.hostedObservabilityEnv(c, virtualServer)
-	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, virtualServer.ID, sv.Version, combined, observabilityEnv)
+	cfg, err := h.hostedMgr.EnsureContainer(c.Request.Context(), userID, virtualServer.ID, sv.Version, combined, observabilityEnv, idleTimeoutMinutes)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to ensure hosted container", "details": err.Error()})
 		return

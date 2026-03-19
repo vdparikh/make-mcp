@@ -87,6 +87,13 @@ export default function Sidebar() {
               </div>
               <div className="top-nav-mega-col">
                 <div className="top-nav-mega-title">Import & Build</div>
+                <button type="button" className="top-nav-mega-item" onClick={() => navigate('/deploy')}>
+                  <i className="bi bi-rocket-takeoff" />
+                  <span>
+                    <strong>Deploy</strong>
+                    <small>Open deployment flow and choose what to publish.</small>
+                  </span>
+                </button>
                 <button type="button" className="top-nav-mega-item" onClick={() => navigate('/import/openapi')}>
                   <i className="bi bi-file-earmark-code" />
                   <span>

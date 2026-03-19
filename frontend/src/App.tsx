@@ -10,6 +10,7 @@ import FlowBuilderPage from './pages/FlowBuilderPage';
 import Marketplace from './pages/Marketplace';
 import Observability from './pages/Observability';
 import Docs from './pages/Docs';
+import DeployFlowPage from './pages/DeployFlowPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { TryChatProvider } from './contexts/TryChatContext';
@@ -55,6 +56,7 @@ function AppLayout() {
             <Route path="/observability" element={<Observability />} />
             <Route path="/import/openapi" element={<ImportOpenAPI />} />
             <Route path="/docs" element={<Docs />} />
+            <Route path="/deploy" element={<DeployFlowPage />} />
           </Routes>
         </div>
       </main>

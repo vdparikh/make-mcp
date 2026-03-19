@@ -27,11 +27,12 @@ import (
 
 // ContainerConfig holds runtime info for a hosted MCP container.
 type ContainerConfig struct {
-	ContainerID string
-	HostPort    string
-	Version     string
-	StartedAt   time.Time
-	LastUsedAt  time.Time
+	ContainerID        string
+	HostPort           string
+	Version            string
+	StartedAt          time.Time
+	LastUsedAt         time.Time
+	IdleTimeoutMinutes int
 }
 
 // HostedManifest captures explicit runtime/deployment metadata for a hosted snapshot.
@@ -65,19 +66,27 @@ type HostedManifestRef struct {
 }
 
 const (
-	labelManaged = "make-mcp.managed"
-	labelUserID  = "make-mcp.user-id"
-	labelServer  = "make-mcp.server-id"
-	labelVersion = "make-mcp.version"
+	labelManaged            = "make-mcp.managed"
+	labelUserID             = "make-mcp.user-id"
+	labelServer             = "make-mcp.server-id"
+	labelVersion            = "make-mcp.version"
+	labelIdleTimeoutMinutes = "make-mcp.idle-timeout-minutes"
+)
+
+const (
+	hostedRuntimeImage       = "node:20-alpine"
+	hostedRuntimeMemoryBytes = int64(512 * 1024 * 1024)
+	hostedRuntimeNanoCPUs    = int64(500_000_000)
+	hostedRuntimePidsLimit   = int64(128)
 )
 
 // Manager tracks one container per (user, server).
 type Manager struct {
-	mu        sync.Mutex
-	cli       *client.Client
+	mu         sync.Mutex
+	cli        *client.Client
 	containers map[string]*ContainerConfig // key: userID + ":" + serverID
-	gen       *generator.Generator
-	db        *database.DB
+	gen        *generator.Generator
+	db         *database.DB
 }
 
 // NewManager creates a new hosted container manager using environment-based Docker config.
@@ -146,16 +155,17 @@ func key(userID, serverID string) string {
 
 // EnsureContainer ensures there is a running container for the given user/server.
 // It returns the ContainerConfig for the running container.
-func (m *Manager) EnsureContainer(ctx context.Context, userID string, serverID string, version string, snapshot *models.Server, envVars map[string]string) (*ContainerConfig, error) {
+func (m *Manager) EnsureContainer(ctx context.Context, userID string, serverID string, version string, snapshot *models.Server, envVars map[string]string, idleTimeoutMinutes int) (*ContainerConfig, error) {
 	if userID == "" || snapshot == nil {
 		return nil, fmt.Errorf("userID and snapshot are required")
 	}
 	if serverID == "" || version == "" {
 		return nil, fmt.Errorf("serverID and version are required")
 	}
+	requestedIdleTimeout := idleTimeoutMinutes
 
 	k := key(userID, serverID)
-	if cfg, err := m.reconcileContainers(ctx, userID, serverID, version, envVars); err == nil && cfg != nil {
+	if cfg, err := m.reconcileContainers(ctx, userID, serverID, version, envVars, requestedIdleTimeout); err == nil && cfg != nil {
 		cfg.LastUsedAt = time.Now()
 		m.mu.Lock()
 		m.containers[k] = cfg
@@ -176,12 +186,16 @@ func (m *Manager) EnsureContainer(ctx context.Context, userID string, serverID s
 	if err := writeGeneratedServer(rootDir, gen); err != nil {
 		return nil, fmt.Errorf("write generated server: %w", err)
 	}
-	if err := writeHostedManifest(rootDir, snapshot, version, userID, serverID, envVars); err != nil {
+	effectiveIdleTimeout := requestedIdleTimeout
+	if effectiveIdleTimeout < 0 {
+		effectiveIdleTimeout = 0
+	}
+	if err := writeHostedManifest(rootDir, snapshot, version, userID, serverID, envVars, effectiveIdleTimeout); err != nil {
 		return nil, fmt.Errorf("write hosted manifest: %w", err)
 	}
 
 	// Start container for this generated server.
-	cfg, err := m.startContainer(ctx, rootDir, userID, serverID, version, envVars)
+	cfg, err := m.startContainer(ctx, rootDir, userID, serverID, version, envVars, effectiveIdleTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -194,17 +208,17 @@ func (m *Manager) EnsureContainer(ctx context.Context, userID string, serverID s
 }
 
 // startContainer creates and starts a Docker container for the generated server folder.
-func (m *Manager) startContainer(ctx context.Context, rootDir string, userID string, serverID string, version string, envVars map[string]string) (*ContainerConfig, error) {
+func (m *Manager) startContainer(ctx context.Context, rootDir string, userID string, serverID string, version string, envVars map[string]string, idleTimeoutMinutes int) (*ContainerConfig, error) {
 	// Run generated server directly in official Node image so hosted publish
 	// does not depend on a prebuilt local runner image.
-	image := "node:20-alpine"
+	image := hostedRuntimeImage
 	absRootDir, err := filepath.Abs(rootDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve generated server path: %w", err)
 	}
 
 	hostPort := randomPort()
-	pidsLimit := int64(128)
+	pidsLimit := hostedRuntimePidsLimit
 
 	env := []string{}
 	for k, v := range envVars {
@@ -222,10 +236,11 @@ func (m *Manager) startContainer(ctx context.Context, rootDir string, userID str
 		StdinOnce:  false,
 		Env:        env,
 		Labels: map[string]string{
-			labelManaged: "true",
-			labelUserID:  userID,
-			labelServer:  serverID,
-			labelVersion: version,
+			labelManaged:            "true",
+			labelUserID:             userID,
+			labelServer:             serverID,
+			labelVersion:            version,
+			labelIdleTimeoutMinutes: strconv.Itoa(idleTimeoutMinutes),
 		},
 		Cmd: []string{
 			"sh",
@@ -245,8 +260,8 @@ func (m *Manager) startContainer(ctx context.Context, rootDir string, userID str
 		},
 		Resources: container.Resources{
 			// Conservative defaults; can be tuned.
-			Memory:    512 * 1024 * 1024, // 512MB
-			NanoCPUs:  500_000_000,       // 0.5 CPU
+			Memory:    hostedRuntimeMemoryBytes,
+			NanoCPUs:  hostedRuntimeNanoCPUs,
 			PidsLimit: &pidsLimit,
 		},
 		PortBindings: nat.PortMap{
@@ -273,11 +288,12 @@ func (m *Manager) startContainer(ctx context.Context, rootDir string, userID str
 	}
 
 	return &ContainerConfig{
-		ContainerID: resp.ID,
-		HostPort:    hostPort,
-		Version:     version,
-		StartedAt:   time.Now(),
-		LastUsedAt:  time.Now(),
+		ContainerID:        resp.ID,
+		HostPort:           hostPort,
+		Version:            version,
+		StartedAt:          time.Now(),
+		LastUsedAt:         time.Now(),
+		IdleTimeoutMinutes: idleTimeoutMinutes,
 	}, nil
 }
 
@@ -302,12 +318,25 @@ func (m *Manager) GetContainerForServer(ctx context.Context, userID string, serv
 		lastEnsured = cfg.LastUsedAt
 	}
 	m.mu.Unlock()
+	idleTimeout := parseContainerIdleTimeout(c.Labels[labelIdleTimeoutMinutes])
+	if m.db != nil {
+		if s, err := m.db.GetHostedSession(ctx, userID, serverID); err == nil && s != nil && s.LastUsedAt != nil {
+			lastEnsured = *s.LastUsedAt
+		}
+	}
+	if idleTimeout > 0 && !lastEnsured.IsZero() {
+		if time.Since(lastEnsured) >= time.Duration(idleTimeout)*time.Minute {
+			_, _ = m.StopSession(ctx, userID, serverID)
+			return nil, nil
+		}
+	}
 	return &ContainerConfig{
-		ContainerID: c.ID,
-		HostPort:    hostPortFromContainer(c),
-		Version:     c.Labels[labelVersion],
-		StartedAt:   startedAt,
-		LastUsedAt:  lastEnsured,
+		ContainerID:        c.ID,
+		HostPort:           hostPortFromContainer(c),
+		Version:            c.Labels[labelVersion],
+		StartedAt:          startedAt,
+		LastUsedAt:         lastEnsured,
+		IdleTimeoutMinutes: idleTimeout,
 	}, nil
 }
 
@@ -478,7 +507,7 @@ func (m *Manager) SessionHealth(ctx context.Context, userID, serverID string) (*
 	return m.db.UpsertHostedSession(ctx, *s)
 }
 
-func (m *Manager) reconcileContainers(ctx context.Context, userID string, serverID string, version string, envVars map[string]string) (*ContainerConfig, error) {
+func (m *Manager) reconcileContainers(ctx context.Context, userID string, serverID string, version string, envVars map[string]string, idleTimeoutMinutes int) (*ContainerConfig, error) {
 	args := filters.NewArgs()
 	args.Add("label", labelManaged+"=true")
 	args.Add("label", labelUserID+"="+userID)
@@ -495,11 +524,16 @@ func (m *Manager) reconcileContainers(ctx context.Context, userID string, server
 		ver := c.Labels[labelVersion]
 		if keep == nil && isRunning && ver == version {
 			cfg := &ContainerConfig{
-				ContainerID: c.ID,
-				HostPort:    hostPortFromContainer(c),
-				Version:     ver,
-				StartedAt:   time.Now(),
-				LastUsedAt:  time.Now(),
+				ContainerID:        c.ID,
+				HostPort:           hostPortFromContainer(c),
+				Version:            ver,
+				StartedAt:          time.Now(),
+				LastUsedAt:         time.Now(),
+				IdleTimeoutMinutes: parseContainerIdleTimeout(c.Labels[labelIdleTimeoutMinutes]),
+			}
+			if idleTimeoutMinutes >= 0 && cfg.IdleTimeoutMinutes != idleTimeoutMinutes {
+				_ = m.stopAndRemoveContainer(ctx, c.ID)
+				continue
 			}
 			matches, matchErr := m.containerEnvMatches(ctx, c.ID, envVars)
 			if matchErr == nil && matches {
@@ -636,7 +670,7 @@ func writeGeneratedServer(rootDir string, gen *generator.GeneratedServer) error 
 	return nil
 }
 
-func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersion, userID, serverID string, envVars map[string]string) error {
+func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersion, userID, serverID string, envVars map[string]string, idleTimeoutMinutes int) error {
 	if snapshot == nil {
 		return fmt.Errorf("snapshot is required")
 	}
@@ -665,7 +699,7 @@ func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersio
 		Snapshot:      snapshotVersion,
 		ServerVersion: snapshot.Version,
 		Runtime:       "docker",
-		Image:         "node:20-alpine",
+		Image:         hostedRuntimeImage,
 		Endpoint:      fmt.Sprintf("/api/users/%s/%s", userID, databaseSafeSlug(snapshot.Name)),
 		Tools:         tools,
 		Resources:     resources,
@@ -675,6 +709,16 @@ func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersio
 		Metadata: map[string]interface{}{
 			"user_id":   userID,
 			"server_id": serverID,
+			"resources": map[string]interface{}{
+				"memory_mb":  hostedRuntimeMemoryBytes / (1024 * 1024),
+				"nano_cpus":  hostedRuntimeNanoCPUs,
+				"pids_limit": hostedRuntimePidsLimit,
+			},
+			"network": map[string]interface{}{
+				"bind_host":      "127.0.0.1",
+				"container_port": 3000,
+			},
+			"idle_timeout_minutes": idleTimeoutMinutes,
 		},
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
@@ -727,3 +771,14 @@ func hasHostedName(names []string) bool {
 	return false
 }
 
+func parseContainerIdleTimeout(raw string) int {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}

@@ -718,7 +718,7 @@ export default function ServerEditor() {
           </button>
           <button 
             className={`btn btn-success server-editor-deploy-btn ${hostedRuntime?.running ? 'running' : ''}`}
-            onClick={() => { setShowDeployModal(true); setSelectedDeploy('hosted'); }}
+            onClick={() => navigate(`/deploy?target=server&id=${encodeURIComponent(server.id)}`)}
           >
             {hostedRuntime?.running && (
               <span className="server-editor-deploy-dot" />
