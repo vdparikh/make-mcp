@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Make MCP — Open-source MCP Builder for Real Tooling</title>
+  <meta name="description" content="Open-source platform to build, deploy, and test MCP servers fast. Create tools visually, ship hosted runtimes, and demo real agentic workflows with Try Chat. Built for developer adoption.">
+  <meta property="og:title" content="Make MCP — Open-source MCP Builder for Real Tooling">
+  <meta property="og:description" content="Build, deploy, and test MCP servers fast. Hosted runtime, compositions, observability, and Try Chat with tool traces.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://vdparikh.github.io/make-mcp/">
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:title" content="Make MCP — Open-source MCP Builder for Real Tooling">
+  <meta property="twitter:description" content="Visual MCP builder with hosted deploy, composable servers, and target-aware Try Chat.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Lato (match app) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="site-header">
+    <nav class="navbar navbar-expand-lg">
+      <div class="container">
+        <a class="navbar-brand logo" href="/">
+          <span class="logo-icon"><i class="bi bi-lightning-charge-fill"></i></span>
+          <span class="logo-text">Make MCP</span>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="nav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-3 gap-lg-4">
+            <li class="nav-item"><a class="nav-link" href="#why-make-mcp">Why</a></li>
+            <li class="nav-item"><a class="nav-link" href="#governance-model">Governance</a></li>
+            <li class="nav-item"><a class="nav-link" href="#features">Features</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp#quick-start">Get Started</a></li>
+            <li class="nav-item"><a class="nav-link" href="https://github.com/vdparikh/make-mcp/tree/main/docs">Docs</a></li>
+            <li class="nav-item"><a class="nav-link nav-cta btn btn-outline-light btn-sm px-3" href="https://github.com/vdparikh/make-mcp"><i class="bi bi-github me-1"></i> Star on GitHub</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-pattern" aria-hidden="true"></div>
+      <div class="hero-graphic" aria-hidden="true">
+        <div class="hero-mcp-icon"><i class="bi bi-diagram-3-fill"></i></div>
+      </div>
+      <div class="container position-relative">
+        <div class="row justify-content-center text-center">
+          <div class="col-lg-10">
+            <h1 class="hero-title">The open-source way to build MCP servers people actually adopt</h1>
+            <p class="hero-subtitle">Design tools visually, deploy hosted runtime endpoints, and prove real workflows with target-aware Try Chat. Make MCP helps teams go from API spec to production-ready MCP in minutes.</p>
+            <div class="hero-badges">
+              <span class="hero-badge"><i class="bi bi-code-slash"></i> Open Source</span>
+              <span class="hero-badge"><i class="bi bi-lightning-charge"></i> Hosted Deploy</span>
+              <span class="hero-badge"><i class="bi bi-stars"></i> Try Chat + Tool Traces</span>
+              <span class="hero-badge"><i class="bi bi-shield-check"></i> Security Scoring</span>
+            </div>
+            <div class="hero-ctas d-flex flex-wrap gap-3 justify-content-center">
+              <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary btn-lg px-4 py-3"><span>Get started</span> <i class="bi bi-arrow-right ms-2"></i></a>
+              <a href="https://github.com/vdparikh/make-mcp" class="btn btn-outline-light btn-lg px-4 py-3"><i class="bi bi-github me-2"></i>Star this project</a>
+            </div>
+            <p class="hero-social-proof">Built for developer velocity: Go backend, React UI, generated Node MCP servers, and a workflow that spans build → deploy → validate.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-strip">
+      <div class="container">
+        <div class="proof-grid">
+          <a class="proof-card" href="https://github.com/vdparikh/make-mcp" target="_blank" rel="noopener noreferrer">
+            <img alt="GitHub stars" src="https://img.shields.io/github/stars/vdparikh/make-mcp?style=for-the-badge&logo=github">
+            <span>Star on GitHub to support the project</span>
+          </a>
+          <a class="proof-card" href="https://github.com/vdparikh/make-mcp/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
+            <img alt="License" src="https://img.shields.io/github/license/vdparikh/make-mcp?style=for-the-badge">
+            <span>MIT licensed for teams and builders</span>
+          </a>
+          <a class="proof-card" href="https://github.com/vdparikh/make-mcp/tree/main/docs" target="_blank" rel="noopener noreferrer">
+            <img alt="Docs" src="https://img.shields.io/badge/docs-developer--friendly-blue?style=for-the-badge">
+            <span>Hands-on docs and examples included</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="why-section" id="why-make-mcp">
+      <div class="container">
+        <h2 class="section-title">Why should you use Make MCP?</h2>
+        <p class="section-lead">Optimized for faster prototyping, safer shipping, and easier demos to internal teams or OSS users.</p>
+        <div class="row g-4">
+          <div class="col-md-6 col-lg-3">
+            <div class="why-card">
+              <i class="bi bi-rocket-takeoff"></i>
+              <h3>Ship Faster</h3>
+              <p>Replace boilerplate scaffolding with visual tool configuration and generated TypeScript runtime.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-3">
+            <div class="why-card">
+              <i class="bi bi-diagram-3"></i>
+              <h3>Compose Systems</h3>
+              <p>Merge multiple servers into opinionated compositions for real agent use cases.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-3">
+            <div class="why-card">
+              <i class="bi bi-activity"></i>
+              <h3>Observe Runtime</h3>
+              <p>Track hosted sessions, health, and tool execution traces with built-in observability hooks.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-3">
+            <div class="why-card">
+              <i class="bi bi-people"></i>
+              <h3>Grow Adoption</h3>
+              <p>Try Chat makes demos concrete by showing tool calls, arguments, and outcomes live.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Governance model: enterprise / security positioning -->
+    <section class="governance-section" id="governance-model">
+      <div class="container">
+        <h2 class="section-title">The Governance Model</h2>
+        <p class="section-lead">Production AI tool access needs the same rigor as cloud infrastructure: identity, portability, and an audit trail—not just prompts and completions.</p>
+        <div class="row g-4">
+          <div class="col-lg-4">
+            <div class="governance-card">
+              <div class="governance-card-icon"><i class="bi bi-person-badge"></i></div>
+              <h3>Identity-aware context</h3>
+              <p>Hosted MCP endpoints support <strong>Bearer token</strong> access and optional <strong>Caller API keys</strong> so requests are tied to a principal—not an anonymous LLM session. That combination limits who can invoke tools against sensitive backends and supports per-caller attribution in policy and observability.</p>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="governance-card">
+              <div class="governance-card-icon"><i class="bi bi-box-seam"></i></div>
+              <h3>Infrastructure portability</h3>
+              <p><strong>Docker as the unit of work</strong> for hosted runtimes: build once, ship a constrained container, run anywhere your platform allows. The same IaaS mindset you expect from cloud services—reproducible artifacts and predictable boundaries—applies to how MCP servers execute.</p>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="governance-card">
+              <div class="governance-card-icon"><i class="bi bi-journal-text"></i></div>
+              <h3>Audit logging for AI tools</h3>
+              <p class="governance-card-kicker">Observability, reframed for security leaders</p>
+              <p><strong>Observability</strong> captures who called which tool, with what outcome and latency—so you can answer compliance and incident questions: “What did the agent do?” and “Was it allowed?” That turns operational telemetry into the audit trail teams need when AI touches production systems.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features: sidebar nav + content (IDE-style) -->
+    <section class="features-section" id="features">
+      <div class="container">
+        <h2 class="section-title">Everything needed to launch and prove MCP value</h2>
+        <p class="section-lead">Build tools, secure them, deploy hosted endpoints, and validate agent behavior against real runtimes.</p>
+        <div class="features-tabs">
+          <nav class="features-nav" aria-label="Features">
+            <button type="button" class="features-nav-item active" data-feature="builder"><i class="bi bi-lightning-charge-fill"></i> Low-code / No-code</button>
+            <button type="button" class="features-nav-item" data-feature="execution"><i class="bi bi-plug-fill"></i> Execution types</button>
+            <button type="button" class="features-nav-item" data-feature="auth"><i class="bi bi-shield-lock-fill"></i> Auth</button>
+            <button type="button" class="features-nav-item" data-feature="testing"><i class="bi bi-play-circle-fill"></i> Testing</button>
+            <button type="button" class="features-nav-item" data-feature="export"><i class="bi bi-download"></i> Export & deploy</button>
+            <button type="button" class="features-nav-item" data-feature="hosted"><i class="bi bi-hdd-network-fill"></i> Hosted runtime</button>
+            <button type="button" class="features-nav-item" data-feature="trychat"><i class="bi bi-stars"></i> Try Chat</button>
+            <button type="button" class="features-nav-item" data-feature="composition"><i class="bi bi-collection-fill"></i> Compositions</button>
+            <button type="button" class="features-nav-item" data-feature="governance"><i class="bi bi-sliders"></i> Governance</button>
+            <button type="button" class="features-nav-item" data-feature="security"><i class="bi bi-shield-check"></i> Security score</button>
+            <button type="button" class="features-nav-item" data-feature="openapi"><i class="bi bi-file-earmark-code"></i> OpenAPI import</button>
+          </nav>
+          <div class="features-panels">
+            <div class="feature-panel active" id="panel-builder">
+              <h3 class="feature-panel-title">Low-code / No-code</h3>
+              <p class="feature-panel-lead">Get a working MCP server in under 5 minutes. Configure tools, resources, and prompts in the UI—no YAML, no server code to write. The platform generates a runnable server you can plug into Cursor or any MCP client.</p>
+              <ul class="feature-panel-list">
+                <li>Tool editor: schema, execution config (REST, CLI, DB, etc.), and auth—all in the UI</li>
+                <li>Resources and prompts live next to your tools; context (user_id, org, roles) wired per tool</li>
+                <li>Export to Node or Docker when you’re ready; no boilerplate to maintain</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-execution">
+              <h3 class="feature-panel-title">Execution types</h3>
+              <p class="feature-panel-lead">REST, GraphQL, Webhooks, CLI, Database, JavaScript, Python—and visual flows that chain them.</p>
+              <ul class="feature-panel-list">
+                <li><strong>REST / GraphQL / Webhook</strong> — URL, method, headers; plug in your API</li>
+                <li><strong>CLI</strong> — kubectl, docker, terraform with allowlists</li>
+                <li><strong>Database</strong> — connection string + query templates</li>
+                <li><strong>Visual Flow</strong> — pipeline → tool for multi-step workflows</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-auth">
+              <h3 class="feature-panel-title">Auth</h3>
+              <p class="feature-panel-lead">Configure per-tool auth in the UI. App sign-in is passkey-only (WebAuthn).</p>
+              <ul class="feature-panel-list">
+                <li>API Key, Bearer token, Basic Auth, OAuth 2.0</li>
+                <li>Credentials stored server-side; merged into tool requests at runtime</li>
+                <li>No passwords for the builder—passkeys only</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-testing">
+              <h3 class="feature-panel-title">Testing</h3>
+              <p class="feature-panel-lead">Run tools from the UI against Dev, Staging, or Prod. No redeploy to switch environments.</p>
+              <ul class="feature-panel-list">
+                <li>Environment dropdown: pick base URL and DB URL per profile</li>
+                <li>Mock input + simulated context; see JSON, table, or card output</li>
+                <li>Per-tool presets (save/load input + context), dry-run for destructive tools</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-export">
+              <h3 class="feature-panel-title">Export & deploy</h3>
+              <p class="feature-panel-lead">Generate a runnable server. Choose target env when you build—URLs are baked in or left in .env.</p>
+              <ul class="feature-panel-list">
+                <li><strong>Node.js</strong> — ZIP with TypeScript, run-with-log script, Cursor-ready</li>
+                <li><strong>Docker</strong> — Dockerfile + compose, non-root</li>
+                <li><strong>GitHub</strong> — Push to a repo in one click</li>
+                <li>Target environment (Dev / Staging / Prod) at generate time</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-hosted">
+              <h3 class="feature-panel-title">Hosted runtime</h3>
+              <p class="feature-panel-lead">Publish directly to managed containers and use a stable hosted endpoint per user + server.</p>
+              <ul class="feature-panel-list">
+                <li>Container-per-user/server model with CPU/memory/pid limits</li>
+                <li>Reverse proxy with SSE-safe streaming and no buffering</li>
+                <li>Session controls: list, health, restart, stop from Observability</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-trychat">
+              <h3 class="feature-panel-title">Try Chat</h3>
+              <p class="feature-panel-lead">Run a target-bound LLM chat session against deployed Server, Marketplace item, or Composition.</p>
+              <ul class="feature-panel-list">
+                <li>Provider switch via config (OpenAI-compatible providers, including Groq)</li>
+                <li>Shows tool calls, arguments, latency, success/failure</li>
+                <li>Great for demos, QA, and onboarding other developers</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-composition">
+              <h3 class="feature-panel-title">Compositions</h3>
+              <p class="feature-panel-lead">Combine multiple MCP servers into one. One config, one export.</p>
+              <ul class="feature-panel-list">
+                <li>Select servers from your dashboard; prefix tool names or merge as-is</li>
+                <li>Merge resources and prompts; export a single Node/Docker package</li>
+                <li>Use case: Stripe + Salesforce + Slack → one “Sales Agent” MCP</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-governance">
+              <h3 class="feature-panel-title">Governance</h3>
+              <p class="feature-panel-lead">Policy engine so tools aren’t a free-for-all. Rate limits, roles, time windows, approvals.</p>
+              <ul class="feature-panel-list">
+                <li>Policies per tool: allowed roles, rate limits, time windows</li>
+                <li>Approval flows for sensitive actions</li>
+                <li>Test tab shows policy decision (allowed / denied / approval required)</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-security">
+              <h3 class="feature-panel-title">Security score</h3>
+              <p class="feature-panel-lead">SlowMist MCP Security Checklist baked in. See your grade before you publish.</p>
+              <ul class="feature-panel-list">
+                <li>0–100% score and A–F grade; checklist in the Security tab</li>
+                <li>Input validation, tool hints, RBAC, rate limiting—all visible in the UI</li>
+                <li>Score shown in the marketplace so consumers know what they’re getting</li>
+              </ul>
+            </div>
+            <div class="feature-panel" id="panel-openapi">
+              <h3 class="feature-panel-title">OpenAPI import</h3>
+              <p class="feature-panel-lead">Paste a spec or upload a file. Every path becomes a tool. Done.</p>
+              <ul class="feature-panel-list">
+                <li>Stripe, Slack, GitHub, or your own API—one import, full server</li>
+                <li>Auth and schemas inferred; tweak in the builder if you want</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screenshots-section" id="screenshots">
+      <div class="container">
+        <h2 class="section-title">Product Tour in Screenshots</h2>
+        <p class="section-lead">A quick visual walkthrough. Click any card to zoom.</p>
+        <div class="screenshot-grid">
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_1.png" data-title="Dashboard">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_1.png" alt="Make MCP Dashboard">
+            <span>Dashboard</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_2.png" data-title="Tool Builder">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_2.png" alt="Tool Builder">
+            <span>Tool Builder</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_3.png" data-title="Testing Playground">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_3.png" alt="Testing Playground">
+            <span>Testing Playground</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_4.png" data-title="Deploy Options">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_4.png" alt="Deploy Options">
+            <span>Deploy Options</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_5.png" data-title="Security Score">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_5.png" alt="Security Score">
+            <span>Security Score</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_7.png" data-title="OpenAPI Import">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_7.png" alt="OpenAPI Import">
+            <span>OpenAPI Import</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_8.png" data-title="Try Chat">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_8.png" alt="Try Chat with hosted tool traces">
+            <span>Try Chat + Tool Traces</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_4-1.png" data-title="Deploy Flow (Hosted Details)">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_4-1.png" alt="Deploy flow hosted details">
+            <span>Deploy Flow (Hosted Details)</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_6.png" data-title="Marketplace Inspect View">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_6.png" alt="Marketplace inspect view">
+            <span>Marketplace Inspect View</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_9.png" data-title="Observability Dashboard">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_9.png" alt="Observability dashboard">
+            <span>Observability Dashboard</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_10.png" data-title="Compositions Command Center">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_10.png" alt="Compositions command center">
+            <span>Compositions Command Center</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_11.png" data-title="Prompt Builder + Live Preview">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_11.png" alt="Prompt builder with live preview">
+            <span>Prompt Builder + Live Preview</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_12.png" data-title="AI Governance Policies">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_12.png" alt="AI governance policies">
+            <span>AI Governance Policies</span>
+          </button>
+          <button type="button" class="screenshot-card" data-screenshot="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_13.png" data-title="AI Governance Policies">
+            <img src="https://github.com/vdparikh/make-mcp/raw/main/docs/images/image_13.png" alt="AI governance policies">
+            <span>Browse and Run Hosted MCP Servers</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Works with / Trusted by -->
+    <section class="works-with">
+      <div class="container">
+        <h2 class="section-title">Works with the tools you use</h2>
+        <p class="section-lead">Generated MCP servers run anywhere the Model Context Protocol is supported.</p>
+        <div class="row g-4 justify-content-center align-items-center text-center">
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">Cursor</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">Claude Desktop</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">VS Code</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">ChatGPT</span></div>
+          </div>
+          <div class="col-6 col-md-4 col-lg-2">
+            <div class="works-item"><span class="works-name">Any MCP client</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Get started -->
+    <section class="get-started">
+      <div class="container">
+        <h2 class="section-title">Get started in minutes</h2>
+        <p class="section-lead">Run with Docker. Sign up with email and a passkey — no password.</p>
+        <div class="row justify-content-center">
+          <div class="col-lg-8">
+            <div class="code-block">
+              <pre class="mb-0"><code>git clone https://github.com/vdparikh/make-mcp.git
+cd make-mcp
+docker-compose up --build</code></pre>
+            </div>
+            <p class="get-started-note mt-3">Open <strong>http://localhost:3000</strong>, register with your email, create a passkey, then create your first server or add the demo server to explore.</p>
+            <div class="text-center mt-4">
+              <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary btn-lg px-4">Full setup guide</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="footer-cta">
+      <div class="container text-center">
+        <h2 class="section-title mb-2">Help grow the open-source MCP ecosystem</h2>
+        <p class="text-white-50 mb-4">Use it, share it, and star it so more developers can discover it.</p>
+        <div class="d-flex gap-3 flex-wrap justify-content-center">
+          <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary btn-lg px-4"><i class="bi bi-rocket-takeoff me-2"></i>Get started</a>
+          <a href="https://github.com/vdparikh/make-mcp" class="btn btn-outline-light btn-lg px-4"><i class="bi bi-github me-2"></i>Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 py-4">
+        <div class="d-flex flex-wrap gap-4">
+          <a href="https://github.com/vdparikh/make-mcp">GitHub</a>
+          <a href="https://github.com/vdparikh/make-mcp/stargazers">Stars</a>
+          <a href="https://github.com/vdparikh/make-mcp#features">Features</a>
+          <a href="https://github.com/vdparikh/make-mcp/tree/main/docs">Documentation</a>
+          <a href="https://modelcontextprotocol.io/">MCP</a>
+        </div>
+        <p class="footer-copy mb-0">Make MCP — Open-source MCP builder for teams that move fast.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="modal fade screenshot-modal" id="screenshotModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="screenshotModalTitle">Screenshot</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <img id="screenshotModalImage" src="" alt="Screenshot zoom preview">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    (function() {
+      var nav = document.querySelectorAll('.features-nav-item');
+      var panels = document.querySelectorAll('.feature-panel');
+      if (!nav.length || !panels.length) return;
+      function show(id) {
+        panels.forEach(function(p) {
+          p.classList.toggle('active', p.id === 'panel-' + id);
+        });
+        nav.forEach(function(n) {
+          n.classList.toggle('active', n.getAttribute('data-feature') === id);
+        });
+      }
+      nav.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          show(btn.getAttribute('data-feature'));
+        });
+      });
+    })();
+
+    (function() {
+      var modalEl = document.getElementById('screenshotModal');
+      var modalImage = document.getElementById('screenshotModalImage');
+      var modalTitle = document.getElementById('screenshotModalTitle');
+      var cards = document.querySelectorAll('.screenshot-card');
+      if (!modalEl || !modalImage || !modalTitle || !cards.length) return;
+      var modal = new bootstrap.Modal(modalEl);
+      cards.forEach(function(card) {
+        card.addEventListener('click', function() {
+          var src = card.getAttribute('data-screenshot') || '';
+          var title = card.getAttribute('data-title') || 'Screenshot';
+          modalImage.setAttribute('src', src);
+          modalImage.setAttribute('alt', title);
+          modalTitle.textContent = title;
+          modal.show();
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

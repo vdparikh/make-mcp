@@ -1,0 +1,81 @@
+# Non-secret application settings. Copy from config.example.yaml and adjust for your environment.
+# Paths are resolved from the backend process working directory (run `go run` from backend/ or set MAKE_MCP_CONFIG).
+
+server:
+  listen_host: "0.0.0.0"
+  listen_port: 8080
+  debug: false
+
+# Browser origins allowed to call the API (credentials). Must match your frontend URL(s).
+cors:
+  allowed_origins:
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"
+    - "http://127.0.0.1:6274"
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "http://localhost:6274"
+
+# Passkeys / WebAuthn — rp_id must match the registrable host you use in the browser (see CONFIGURATION.md).
+webauthn:
+  rp_id: "localhost"
+  rp_origins:
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+
+hosted:
+  container_dial_host: "127.0.0.1"
+  container_bind_host: "127.0.0.1"
+  generated_server_public_host_ip: "127.0.0.1"
+  observability_docker_host_alias: "host.docker.internal"
+  observability_replace_api_hosts:
+    - "127.0.0.1"
+    - "::1"
+    - "localhost"
+  # Caps and per-tier defaults for hosted MCP containers (optional; zeros use built-in defaults).
+  runtime_isolation:
+    max_memory_mb: 4096
+    max_nano_cpus: 2000000000
+    max_pids: 512
+    tiers:
+      standard:
+        memory_mb: 512
+        nano_cpus: 500000000
+        pids: 128
+      restricted:
+        memory_mb: 384
+        nano_cpus: 350000000
+        pids: 96
+      strict:
+        memory_mb: 256
+        nano_cpus: 250000000
+        pids: 64
+
+urls:
+  mcp_hosted_base_url: ""
+  mcp_observability_ingest_base_url: ""
+
+paths:
+  docs_dir: ""
+
+# LLM (chat, etc.): API keys via env (never put secrets in this file).
+# Multiple providers: set default_provider to the name of the block to use by default (Try Chat).
+llm:
+  default_provider: groq
+  providers:
+    groq:
+      type: openai_compatible
+      base_url: https://api.groq.com/openai/v1
+      model: llama-3.3-70b-versatile
+      api_key_env: GROQ_API_KEY
+      enabled: true
+    # Anthropic Messages API (not OpenAI-compatible). Set ANTHROPIC_API_KEY in env.
+    anthropic:
+      type: anthropic
+      base_url: https://api.anthropic.com
+      model: claude-haiku-4-5-20251001
+      api_key_env: ANTHROPIC_API_KEY
+      max_tokens: 8192
+      enabled: true

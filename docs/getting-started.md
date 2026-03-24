@@ -1,0 +1,873 @@
+# MCP Server Builder - Getting Started Guide
+
+A UI-driven platform to create **Model Context Protocol (MCP) servers** without writing code.
+
+---
+
+## Table of Contents
+
+1. [Quick Start](#quick-start)
+2. [Project Structure](#project-structure)
+3. [Architecture](#architecture)
+4. [Core Features](#core-features)
+5. [3 Powerful Features](#3-powerful-features)
+6. [API Reference](#api-reference)
+7. [Creating Your First MCP Server](#creating-your-first-mcp-server)
+8. [Verifying that your client invokes the server](#verifying-that-your-client-eg-cursor-invokes-the-server)
+9. [Example: Location Lookup Tool](#example-location-lookup-tool)
+10. [Deployment](#deployment)
+11. [Security Score](#security-score)
+12. [Try Chat with Hosted Tools](#try-chat-with-hosted-tools)
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Go 1.22+**
+- **Node.js 20+**
+- **PostgreSQL 16+** (or Docker)
+
+### Option 1: Docker Compose (Recommended)
+
+```bash
+docker-compose up --build
+```
+
+Open http://localhost:3000
+
+### Option 2: Manual Setup
+
+```bash
+# 1. Start PostgreSQL
+docker run -d --name mcp-builder-db \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=mcp_builder \
+  -p 5432:5432 \
+  postgres:16-alpine
+
+# 2. Start Backend (Terminal 1)
+cd backend
+go mod download
+go run ./cmd/server
+
+# 3. Start Frontend (Terminal 2)
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:3000. You will need to **log in** or **register**. On first run, a default demo user is created: **demo@example.com** / **demo123**. A **Demo API Toolkit** server is also seeded for that user with 8 tools, sample resources, prompts, context configs, and policies.
+
+---
+
+## Demo Server (Auto-Created)
+
+When you first start the platform, a **Demo API Toolkit** server is automatically seeded with:
+
+### 8 Working Tools (Free APIs, No Auth Required)
+
+| Tool | Description | API |
+|------|-------------|-----|
+| `get_location_by_zip` | US ZIP code → city, state, coordinates | Zippopotam.us |
+| `get_random_user` | Generate random user profiles | RandomUser.me |
+| `get_ip_info` | IP address geolocation | IPInfo.io |
+| `get_joke` | Random dad jokes | icanhazdadjoke.com |
+| `get_github_user` | GitHub profile lookup | GitHub API |
+| `validate_email` | Email format validation | Disify |
+| `get_country_info` | Country details (capital, population) | RestCountries |
+| `get_secure_customer_data` | Demo of context injection | HTTPBin |
+
+### Sample Resources
+- `api_documentation` - Markdown documentation
+- `sample_data` - Test data (ZIP codes, usernames, IPs)
+
+### Sample Prompts
+- `location_summary` - Summarize location data
+- `user_profile_analysis` - Analyze user profiles
+- `country_comparison` - Compare two countries
+
+### Context Configuration
+- JWT claims extraction
+- HTTP header extraction (X-User-ID, X-Organization-ID)
+
+### Governance Policy
+- Role-based access (admin, support, sales)
+- Rate limiting (100 calls/hour)
+- Business hours restriction
+
+---
+
+## Project Structure
+
+```
+make-mcp/
+├── backend/                          # Go API Server
+│   ├── cmd/server/main.go            # Entry point
+│   ├── internal/
+│   │   ├── api/handlers.go           # REST API handlers
+│   │   ├── auth/                     # JWT auth, login/register
+│   │   ├── database/                 # PostgreSQL + migrations + seed
+│   │   ├── models/                   # Data models
+│   │   ├── generator/                # MCP server code generator
+│   │   ├── context/                  # Context Engine
+│   │   ├── governance/               # Policy Engine
+│   │   ├── healing/                  # Self-Healing Engine
+│   │   ├── security/                 # Security score (SlowMist checklist)
+│   │   └── openapi/                  # OpenAPI import
+│   ├── go.mod
+│   └── Dockerfile
+│
+├── frontend/                         # React UI
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── Dashboard.tsx         # Server list
+│   │   │   ├── ServerEditor.tsx       # Server configuration
+│   │   │   ├── Compositions.tsx      # Server composition
+│   │   │   ├── Marketplace.tsx       # Browse published servers
+│   │   │   ├── Login.tsx, Register   # Auth
+│   │   │   └── ...
+│   │   ├── components/
+│   │   │   ├── ToolEditor.tsx        # Tool builder (REST, CLI, Flow, etc.)
+│   │   │   ├── ResourceEditor.tsx, PromptEditor.tsx
+│   │   │   ├── ContextConfigEditor.tsx, PolicyEditor.tsx
+│   │   │   ├── TestPlayground.tsx    # Live testing (table/card output)
+│   │   │   └── HealingDashboard.tsx
+│   │   ├── services/api.ts
+│   │   ├── types/index.ts
+│   │   └── styles/App.css
+│   ├── package.json
+│   └── Dockerfile
+│
+├── docs/                             # Documentation
+│   ├── getting-started.md
+│   ├── creating-servers.md
+│   ├── compositions.md
+│   └── security-best-practices.md
+├── docker-compose.yml
+└── Makefile
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     React Frontend                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
+│  │Dashboard │ │ Server   │ │  Test    │ │  Healing     │   │
+│  │          │ │ Editor   │ │Playground│ │  Dashboard   │   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Go Backend API                         │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐    │
+│  │   REST API   │ │  Generator   │ │  Tool Executor   │    │
+│  │   Handlers   │ │   Engine     │ │                  │    │
+│  └──────────────┘ └──────────────┘ └──────────────────┘    │
+│                                                             │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────┐    │
+│  │   Context    │ │  Governance  │ │   Self-Healing   │    │
+│  │   Engine     │ │   Engine     │ │     Engine       │    │
+│  └──────────────┘ └──────────────┘ └──────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      PostgreSQL                             │
+│  servers │ tools │ resources │ prompts │ policies │ ...    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Core Features
+
+### 1. Visual Server Builder
+
+Create MCP servers through a graphical UI:
+- Server name, description, version
+- Tools (functions AI can call)
+- Resources (data endpoints)
+- Prompts (templated instructions)
+
+### 2. Tool Builder
+
+Create tools with multiple execution types:
+
+| Execution Type | Description |
+|----------------|-------------|
+| `rest_api` | Call external REST APIs |
+| `graphql` | Execute GraphQL queries |
+| `webhook` | Send data to webhooks |
+| `cli` | Execute shell commands (e.g. kubectl, docker, terraform, aws) with an optional `allowed_commands` allowlist |
+| `database` | Execute SQL queries |
+| `javascript` | Run JavaScript code |
+| `python` | Run Python scripts |
+| `flow` | Visual pipeline: chain nodes (API, transform, etc.) and convert to a single tool |
+
+#### Authentication Configuration
+
+The Tool Builder includes a dedicated **Authentication** tab with visual configuration for:
+
+| Auth Type | Description | Configuration |
+|-----------|-------------|---------------|
+| **No Authentication** | Public APIs | None required |
+| **API Key** | Header-based API key | Header name, prefix, value |
+| **Bearer Token** | JWT/OAuth tokens | Token value (auto-adds `Authorization: Bearer`) |
+| **Basic Auth** | Username + password | Credentials (auto-encodes Base64) |
+| **OAuth 2.0** | Client credentials flow | Token URL, client ID, client secret, scope |
+
+**How it works:**
+
+1. Select an auth type from the visual picker
+2. Fill in the required fields (secrets can use `{{ENV_VAR}}` placeholders)
+3. Auth headers are automatically merged into the execution config
+4. For OAuth 2.0, tokens are fetched and cached at runtime
+
+**Example - API Key:**
+```json
+// Generated execution config
+{
+  "url": "https://api.example.com/data",
+  "headers": {
+    "X-API-Key": "your-api-key"
+  },
+  "auth": {
+    "type": "api_key",
+    "apiKey": {
+      "headerName": "X-API-Key",
+      "prefix": "",
+      "value": "your-api-key"
+    }
+  }
+}
+```
+
+**Example - OAuth 2.0:**
+```json
+{
+  "url": "https://api.example.com/data",
+  "auth": {
+    "type": "oauth2",
+    "oauth2": {
+      "tokenUrl": "https://auth.example.com/oauth/token",
+      "clientId": "client_123",
+      "clientSecret": "{{OAUTH_CLIENT_SECRET}}",
+      "scope": "read write"
+    }
+  }
+}
+```
+
+The generated MCP server automatically handles OAuth2 token fetching and caching.
+
+### 3. Live Testing Playground
+
+Test tools before deployment:
+- Provide mock input
+- Simulate user context
+- **Environment profile** — Choose Dev, Staging, or Prod to run tools against different base URLs and database URLs (configured in the **Environments** tab in the left menu; see [Creating Servers → Environment profiles](./creating-servers.md#environment-profiles-dev--staging--prod)).
+- View responses and errors
+- Get healing suggestions on failure
+
+For tools with **Output display** set to **table**, **card**, **image**, **form**, **chart**, or **map**, the playground renders structured output from the tool’s `_mcp_app` JSON (same pattern as [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)). **Form** shows inputs and submits to another tool on the same server (configure `submit_tool` and `fields` in Output display config). **Chart** expects tool results with `labels` (string array) and `datasets` (array of `{ "label", "data": [numbers] }`); optional `chart_type` (`bar` or `line`) and key overrides in Output display config. **Map** embeds **Google Maps**: return `lat` / `lng` (or custom keys), or a single allowlisted `https://…google…/maps…` URL via `embed_url_key`; optional `zoom` / `title_key`.
+
+### 4. Server Code Generation & Deploy
+
+From the **Deploy** tab you can:
+- **Environment profiles** — Configured in the **Environments** tab (left menu, below General). Set Base URL and Database URL for Dev, Staging, and Prod; Testing and Deploy use this configuration. See [Creating Servers → Environment profiles](./creating-servers.md#environment-profiles-dev--staging--prod).
+- **Hosted (Publish MCP)** — Deploy to managed runtime and get hosted URL + MCP config. Configure:
+  - **Endpoint protection**: `Bearer token` or `No auth`
+  - **Caller identity**: independent toggle requiring `X-Make-MCP-Caller-Id` for per-user attribution
+  - **Idle shutdown** policy
+  - **One-click install** buttons for Cursor, VS Code, and VS Code Insiders
+- **Node.js** — Generate and download a ZIP (Node.js + TypeScript project). Includes `run-with-log.mjs` for verifying tool invocations. For table/card/image/form/chart/map tools, the ZIP includes a bundled **MCP App** HTML viewer and the server advertises `resources` plus `_meta.ui` on those tools so hosts that support MCP Apps (e.g. [MCP Jam](https://www.mcpjam.com/), Claude) can embed the UI; clients that do not implement the extension still receive normal tool text/JSON. The server also sends **`_meta.ui.csp.resourceDomains`** on `resources/read` so external images (e.g. NASA, CDNs) and Google Maps embeds are allowed under the host’s CSP; set env **`MCP_APP_RESOURCE_DOMAINS`** (comma-separated `https://…` origins) to add more. See [MCP Apps CSP & CORS](https://apps.extensions.modelcontextprotocol.io/api/documents/csp-and-cors.html).
+- **Docker** — Instructions and generated Dockerfile; run as non-root.
+- **GitHub** — Push the generated server to a GitHub repository (create or existing).
+- **Deploy to Cloud** — Placeholder for future cloud deployment option.
+
+### 5. Security Score
+
+Make MCP computes a **security score** (0–100%, grade A–F) for each server based on the [SlowMist MCP Security Checklist](https://github.com/slowmist/MCP-Security-Checklist).
+
+- **While building:** Open your server → **Security** in the left navigation. View the current score, grade, and a list of criteria (e.g. input validation, rate limiting, access control, CLI allowlist, tool hints). Address unmet items to improve the score.
+- **In the marketplace:** Published servers display their security score and grade on the card and in the inspector; the **Security** tab shows which checklist items the server satisfies.
+
+See [Security Best Practices](./security-best-practices.md) for the full mapping of practices to Make MCP features, including the hosted **Runtime Security Model** section.
+
+### 6. Builder UX: walkthroughs, templates, presets, diff, dry-run
+
+- **In-app guided walkthroughs** — Context, Policies, Testing, and Healing tabs link to the relevant docs; use **Docs** in the app to browse the full Creating Servers and Security Best Practices guides.
+- **Template gallery for tools** — When adding a tool, use **Quick templates** for REST, GraphQL, Database, and CLI to prefill name, schema, and execution config.
+- **Per-tool test presets** — In the Testing tab, save the current input and context as a named preset per tool (stored per user); load or delete presets from the dropdown.
+- **Diff view for tool changes** — When editing a tool and saving, a **Review tool changes** modal shows before/after for each field so you can confirm before applying.
+- **Dry-run for destructive tools** — For tools marked Destructive, the Testing tab offers a **Dry-run** checkbox to preview input and context without executing the tool.
+
+Details are in [Creating Servers](./creating-servers.md) (Tool template gallery, Reviewing tool changes, Per-tool test presets, Dry-run mode, In-app help).
+
+### 7. Try Chat with Hosted Tools
+
+Use **Try Chat** from Server Editor, Marketplace, or Compositions to run an LLM chat session against the selected target.
+
+- Provider/model are loaded from the `llm:` section in `config/config.yaml` (same file as server/CORS settings). You can configure multiple providers (e.g. Groq as `openai_compatible`, Claude as `type: anthropic` with `ANTHROPIC_API_KEY`); the UI lists enabled providers from `/api/try/config`.
+- Target context (server/marketplace/composition) is auto-bound when you launch from those pages.
+- Tool traces (name, args, duration, success/failure) are shown in-session.
+- Target must have a hosted deployment; if runtime is still warming up, Try Chat returns a temporary unavailable message and retries are safe.
+
+![Try Chat modal with target context and tool traces](./images/image_8.png)
+
+---
+
+## 3 Powerful Features
+
+### Feature 1: Context-Aware Tool Execution
+
+Automatically inject user identity, permissions, and organization data into tool calls.
+
+**Problem:** AI tools behave like dumb APIs without user context.
+
+**Solution:** Configure context extraction from JWT, headers, or query params.
+
+```json
+// Tool definition with context
+{
+  "name": "get_customer_data",
+  "context_fields": ["user_id", "organization_id", "permissions"]
+}
+
+// At runtime, tool receives:
+{
+  "customer_id": "123",
+  "context": {
+    "user_id": "abc",
+    "organization_id": "org-42",
+    "permissions": ["billing.read"]
+  }
+}
+```
+
+**Context Source Types:**
+- `header` - Extract from HTTP headers
+- `jwt` - Extract from JWT token claims
+- `query` - Extract from URL query parameters
+- `custom` - Custom extraction logic
+
+### Feature 2: AI Governance Layer (Policy Engine)
+
+Define rules that control when and how AI agents can call tools.
+
+**Problem:** AI agents can accidentally call dangerous tools like `delete_all_users()` or `send_wire_transfer()`.
+
+**Solution:** Define governance policies with rules.
+
+**Available Rule Types:**
+
+| Rule Type | Description | Example |
+|-----------|-------------|---------|
+| `approval_required` | Require human approval | Payments over $1000 |
+| `max_value` | Limit field values | Max amount: $5000 |
+| `allowed_roles` | Restrict to roles | Only `finance_agent` |
+| `time_window` | Allow during hours | 9 AM - 5 PM only |
+| `rate_limit` | Limit call frequency | 100 calls/hour |
+
+**Example Policy:**
+```yaml
+tool: send_payment
+rules:
+  - type: max_value
+    config:
+      field: amount
+      max_value: 5000
+    fail_action: deny
+  
+  - type: allowed_roles
+    config:
+      roles: ["finance_agent", "admin"]
+    fail_action: deny
+  
+  - type: time_window
+    config:
+      start_hour: 9
+      end_hour: 17
+      weekdays: [1, 2, 3, 4, 5]
+    fail_action: deny
+```
+
+### Feature 3: Self-Healing Tools
+
+Automatically detect failures and suggest fixes.
+
+**Problem:** Tools fail due to expired tokens, schema changes, rate limits.
+
+**Solution:** Analyze errors and provide repair suggestions.
+
+**Auto-Detected Error Patterns:**
+
+| Error | Detection | Suggestion |
+|-------|-----------|------------|
+| 401 Unauthorized | Token expired | Refresh OAuth token |
+| 403 Forbidden | Permission denied | Request permissions |
+| 429 Rate Limited | Too many requests | Retry with backoff |
+| Schema mismatch | Field name changed | Update tool schema |
+| Timeout | Request too slow | Extend timeout |
+| 5xx Server Error | External service down | Retry with backoff |
+
+---
+
+## API Reference
+
+All `/api/servers`, `/api/tools`, `/api/resources`, `/api/prompts`, `/api/policies`, `/api/compositions`, and `/api/import/openapi` endpoints require **authentication** (Bearer token). Public: `/api/health`, `/api/auth/login`, `/api/auth/register`, `/api/marketplace` (read).
+
+### Auth
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register user |
+| POST | `/api/auth/login` | Login (returns JWT) |
+| GET | `/api/auth/me` | Current user (requires auth) |
+
+### Servers
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/servers` | List current user's servers |
+| POST | `/api/servers` | Create server |
+| GET | `/api/servers/:id` | Get server with tools/resources/prompts |
+| PUT | `/api/servers/:id` | Update server |
+| DELETE | `/api/servers/:id` | Delete server |
+| POST | `/api/servers/:id/generate` | Generate & download ZIP |
+| POST | `/api/servers/:id/github-export` | Push to GitHub |
+| POST | `/api/servers/:id/publish` | Publish version (marketplace) |
+| GET | `/api/servers/:id/versions` | List published versions |
+| GET | `/api/servers/:id/versions/:version` | Get version snapshot |
+| GET | `/api/servers/:id/versions/:version/download` | Download version ZIP |
+| GET | `/api/servers/:id/flows` | List flows (visual builder) |
+| GET | `/api/servers/:id/security-score` | Security score (SlowMist) |
+| GET | `/api/servers/:id/context-configs` | List context configs |
+| POST | `/api/servers/:id/context-configs` | Create context config |
+
+### Tools
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/tools` | Create tool |
+| GET | `/api/tools/:id` | Get tool |
+| PUT | `/api/tools/:id` | Update tool |
+| DELETE | `/api/tools/:id` | Delete tool |
+| POST | `/api/tools/:id/test` | Test tool execution |
+| GET | `/api/tools/:id/executions` | Get execution history |
+| GET | `/api/tools/:id/policies` | Get tool policies |
+| GET | `/api/tools/:id/healing` | Get healing suggestions |
+
+### Resources & Prompts
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/resources` | Create resource |
+| DELETE | `/api/resources/:id` | Delete resource |
+| POST | `/api/prompts` | Create prompt |
+| DELETE | `/api/prompts/:id` | Delete prompt |
+
+### Policies
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/policies` | Create policy |
+| DELETE | `/api/policies/:id` | Delete policy |
+| POST | `/api/policies/evaluate` | Evaluate policy |
+
+### Compositions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/compositions` | List current user's compositions |
+| POST | `/api/compositions` | Create composition |
+| GET | `/api/compositions/:id` | Get composition |
+| PUT | `/api/compositions/:id` | Update composition |
+| DELETE | `/api/compositions/:id` | Delete composition |
+| POST | `/api/compositions/:id/export` | Export composition ZIP |
+
+### Marketplace (public read)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/marketplace` | List published public servers |
+| GET | `/api/marketplace/:id` | Get server + versions + security score |
+| GET | `/api/marketplace/:id/download` | Download latest version ZIP |
+
+### Hosted Runtime (auth required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/servers/:id/hosted-publish` | Deploy or ensure hosted runtime for a server |
+| GET | `/api/servers/:id/hosted-status` | Get hosted status/details for a server |
+| POST | `/api/marketplace/:id/hosted-deploy` | Deploy marketplace item to your hosted runtime |
+| GET | `/api/marketplace/:id/hosted-status` | Get hosted status for deployed marketplace target |
+| POST | `/api/compositions/:id/hosted-deploy` | Deploy composition to your hosted runtime |
+| GET | `/api/compositions/:id/hosted-status` | Get hosted status for deployed composition target |
+| GET | `/api/hosted/sessions` | List hosted sessions for current user |
+| GET | `/api/hosted/sessions/:server_id/health` | Session health check |
+| POST | `/api/hosted/sessions/:server_id/restart` | Restart hosted session |
+| POST | `/api/hosted/sessions/:server_id/stop` | Stop hosted session |
+
+Hosted deploy requests support:
+
+- `hosted_auth_mode`: `bearer_token` or `no_auth`
+- `require_caller_identity`: boolean toggle for caller attribution enforcement
+- `idle_timeout_minutes`: idle auto-shutdown window
+
+### Try Chat (auth required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/try/config` | List enabled LLM providers/default provider |
+| POST | `/api/try/chat` | Run chat with optional target-bound hosted tool use |
+
+### Import
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/import/openapi/preview` | Preview OpenAPI → tools (no auth) |
+| POST | `/api/import/openapi` | Import OpenAPI and create server (auth) |
+
+---
+
+## Creating Your First MCP Server
+
+### Step 1: Create a Server
+
+1. Click **"New Server"** on the Dashboard (after logging in).
+2. In the modal, enter:
+   - **Name:** `weather-service`
+   - **Description:** `Weather and location tools for AI agents`
+   - **Version:** `1.0.0` (optional)
+3. Click **"Create Server"**. You are taken to the Server Editor.
+
+### Step 2: Add a Tool
+
+1. In the Server Editor left nav, open **Tools** and click **"Add Tool"**.
+2. Configure:
+
+**Basic Info:**
+- **Name:** `get_location_by_zip`
+- **Description:** `Get location details for a US zip code`
+- **Execution Type:** `rest_api` (REST API)
+
+**Input Schema** (Config tab): use the schema editor or paste:
+```json
+{
+  "type": "object",
+  "properties": {
+    "zip_code": {
+      "type": "string",
+      "description": "US ZIP code"
+    }
+  },
+  "required": ["zip_code"]
+}
+```
+
+**Execution** (Config tab): set URL, method, and optional auth:
+- **URL:** `https://api.zippopotam.us/us/{{zip_code}}`
+- **Method:** `GET`
+- **Headers:** leave empty or add as needed (no auth for this public API)
+
+3. Click **Save** (or **Create Tool** when creating).
+
+### Step 3: Test the Tool
+
+1. Go to **Testing** tab
+2. Select `get_location_by_zip`
+3. Enter input:
+```json
+{
+  "zip_code": "94538"
+}
+```
+4. Click **Execute Tool**
+5. View the response
+
+### Step 4: Generate & Download
+
+1. In the Server Editor left nav, open **Deploy**.
+2. Select **Node.js** and follow the instructions: click **"Generate & Download"** to get a ZIP.
+3. Extract and run:
+```bash
+cd weather-service-mcp-server
+npm install
+npm run build
+npm start
+```
+
+### Step 5: Configure MCP Client
+
+Add to your MCP client config (Claude Desktop, Cursor, etc.):
+
+```json
+{
+  "mcpServers": {
+    "weather-service": {
+      "command": "node",
+      "args": ["/path/to/weather-service-mcp-server/dist/server.js"]
+    }
+  }
+}
+```
+
+To verify the client actually invokes your server, use **command** `node` and **args** `["/path/to/weather-service-mcp-server/run-with-log.mjs"]`, then run `tail -f mcp.log` in the server directory (see [Verifying that your client invokes the server](#verifying-that-your-client-eg-cursor-invokes-the-server)).
+
+### Verifying that your client (e.g. Cursor) invokes the server
+
+The client runs the server in the background, so you don't see console output and can't tell if tools are actually being called. Every **downloaded server** from Make MCP includes:
+
+1. **`run-with-log.mjs`** – a Node script that runs the server and writes every MCP event to `mcp.log`. Use **command** `node` and **args** `["/full/path/to/run-with-log.mjs"]` in your MCP config (do not use the `.sh` script as the command—clients that run `node` will fail on `.sh`).
+2. **README section** – "Verifying that your client (e.g. Cursor) invokes the server".
+
+**Quick check:**
+
+- In your MCP config set **command** to `node` and **args** to `["/full/path/to/your-server/run-with-log.mjs"]`.
+- In another terminal: `cd /path/to/your-server && tail -f mcp.log`.
+- In Cursor, ask the agent to use a tool (e.g. "Look up IP 8.8.8.8 using get_ip_info").
+- If you see lines like `Tool called: get_ip_info | args: ...` and `Tool get_ip_info completed in ...ms` in `mcp.log`, the platform is generating a valid MCP server and your client is invoking it correctly.
+
+**If Cursor’s AI says it “doesn’t have access” to your MCP tools:**  
+That means Cursor’s model is not calling your server (or isn’t being given your tools). Try:
+
+1. **Confirm the server is running** – In **Settings → MCP**, ensure your server (e.g. `demo-api-toolkit`) is **enabled** and shows no error. Restart Cursor after changing `mcp.json`.
+2. **Use a context where tools are available** – In Cursor, MCP tools are often available in **Composer** (agent) or when using the right chat mode. Open Composer and ask: “Use the get_ip_info tool to look up IP 8.8.8.8.”
+3. **Phrase the request so the model uses the tool** – Ask explicitly: “Call the get_ip_info MCP tool with argument ip_address 8.8.8.8” or “Use your get_ip_info tool to look up 8.8.8.8.”
+4. **Confirm with mcp.log** – If you use `run-with-log.mjs` and run `tail -f mcp.log`, you’ll see whether the server received a request. No new lines when you send a message means Cursor didn’t call your server.
+
+If the server is enabled and you’re in the right mode but the model still refuses to call it, that’s a Cursor product limitation. Your Make MCP–generated server is valid; the client just has to send requests to it.
+
+### Setting observability env parameters in Cursor
+
+After you **download** an MCP server and **enable observability reporting** in Make MCP (server → Observability tab → **Enable reporting**), you need to pass the endpoint URL and key to the server when Cursor runs it. Cursor passes environment variables from its MCP config to the server process.
+
+1. **In Make MCP:** Open your server → **Observability** tab → click **Enable reporting**. Copy the two values shown:
+   - `MCP_OBSERVABILITY_ENDPOINT` (e.g. `https://your-make-mcp-host/api/observability/events`)
+   - `MCP_OBSERVABILITY_KEY` (the reporting key)
+2. **In Cursor:** Open the MCP config: **Settings → MCP → Edit config** (or edit `~/.cursor/mcp.json`).
+3. Find your server's entry under `mcpServers` and add an **`env`** object with those two variables:
+
+```json
+{
+  "mcpServers": {
+    "your-server-name": {
+      "command": "node",
+      "args": ["/full/path/to/your-server/dist/server.js"],
+      "env": {
+        "MCP_OBSERVABILITY_ENDPOINT": "https://your-make-mcp-host/api/observability/events",
+        "MCP_OBSERVABILITY_KEY": "paste-the-key-from-make-mcp-here"
+      }
+    }
+  }
+}
+```
+
+4. **Save** the config and **restart Cursor** (or disable/re-enable the server in Settings → MCP). Tool calls from that server will then be sent to Make MCP and appear under **Observability** in the sidebar.
+
+If you use `run-with-log.mjs` in `args` for local logging, add the same `env` block so the server receives both logging and observability variables.
+
+---
+
+## Example: Location Lookup Tool
+
+Here's a complete example using the free [Zippopotam.us](https://api.zippopotam.us) API:
+
+### Tool Configuration
+
+| Field | Value |
+|-------|-------|
+| **Name** | `get_location_by_zip` |
+| **Description** | `Get location details (city, state, coordinates) for a US zip code` |
+| **Execution Type** | `rest_api` |
+
+### Input Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "zip_code": {
+      "type": "string",
+      "description": "US ZIP code (e.g., 94538)"
+    }
+  },
+  "required": ["zip_code"]
+}
+```
+
+### Output Schema
+```json
+{
+  "type": "object",
+  "properties": {
+    "country": { "type": "string" },
+    "post code": { "type": "string" },
+    "places": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "place name": { "type": "string" },
+          "state": { "type": "string" },
+          "latitude": { "type": "string" },
+          "longitude": { "type": "string" }
+        }
+      }
+    }
+  }
+}
+```
+
+### Execution Configuration
+```json
+{
+  "url": "https://api.zippopotam.us/us/{{zip_code}}",
+  "method": "GET",
+  "headers": {}
+}
+```
+
+### Test Input
+```json
+{
+  "zip_code": "94538"
+}
+```
+
+### Expected Output
+```json
+{
+  "country": "United States",
+  "country abbreviation": "US",
+  "post code": "94538",
+  "places": [
+    {
+      "place name": "Fremont",
+      "longitude": "-121.9712",
+      "latitude": "37.5308",
+      "state": "California",
+      "state abbreviation": "CA"
+    }
+  ]
+}
+```
+
+---
+
+## Deployment
+
+### Local Development
+
+```bash
+make dev
+```
+
+### Docker Compose
+
+```bash
+docker-compose up --build -d
+```
+
+### Production Considerations
+
+1. **Database:** Use managed PostgreSQL (AWS RDS, Cloud SQL)
+2. **Secrets:** Use environment variables for sensitive config
+3. **HTTPS:** Put behind a reverse proxy with TLS
+4. **Authentication:** Add auth middleware for production use
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://postgres:postgres@localhost:5432/mcp_builder?sslmode=disable` |
+| `PORT` | API server port | `8080` |
+| `DEBUG` | Enable debug mode | `false` |
+
+---
+
+## Database Schema
+
+```sql
+-- Users & Auth
+users (id, email, name, password_hash, created_at, updated_at)
+
+-- Core
+servers (id, name, description, version, icon, status, published_at, latest_version, owner_id, is_public, downloads, auth_config, created_at, updated_at)
+tools (id, server_id, name, description, input_schema, output_schema, execution_type, execution_config, context_fields, output_display, output_display_config, read_only_hint, destructive_hint, created_at, updated_at)
+resources (id, server_id, name, uri, mime_type, handler, created_at, updated_at)
+prompts (id, server_id, name, description, template, arguments, created_at, updated_at)
+
+-- Context & Governance
+context_configs (id, server_id, name, source_type, config, created_at, updated_at)
+policies (id, tool_id, name, description, enabled, created_at, updated_at)
+policy_rules (id, policy_id, type, config, priority, fail_action)
+
+-- Observability & Healing
+tool_executions (id, tool_id, server_id, input, output, error, status_code, duration_ms, success, healing_applied, created_at)
+healing_suggestions (id, tool_id, error_pattern, suggestion_type, suggestion, auto_apply, applied, created_at)
+
+-- Versioning & Marketplace
+server_versions (id, server_id, version, release_notes, snapshot, published_by, published_at)
+
+-- Visual flows
+flows (id, server_id, name, description, nodes, edges, created_at, updated_at)
+
+-- Composition
+server_compositions (id, name, description, server_ids, owner_id, created_at, updated_at)
+```
+
+---
+
+## Security Score
+
+Make MCP computes a **security score** (0–100%, grade A–F) for every server using the [SlowMist MCP Security Checklist](https://github.com/slowmist/MCP-Security-Checklist).
+
+| Where | What you see |
+|-------|----------------|
+| **Server Editor → Security** | Current score, grade, and a checklist of criteria (e.g. input validation, rate limiting, access control, CLI allowlist). Unmet items show a short reason so you can improve the score. |
+| **Marketplace** | Each published server shows a score badge on the card. In the server inspector, the **Security** tab shows the full criteria list. |
+
+The score is based only on configuration we can evaluate (schemas, policies, hints, resources, versioning). For a full mapping of MCP security practices to Make MCP features, see [Security Best Practices](./security-best-practices.md).
+
+---
+
+## Try Chat with Hosted Tools
+
+Try Chat is the quickest way to demonstrate real tool-calling behavior against a deployed target:
+
+1. Deploy a target to hosted runtime from **Deploy** (Server, Marketplace, or Composition).
+2. Click **Try** / **Try Chat** from that same target page.
+3. Ask a task-oriented prompt (for example, "Call `get_joke` and summarize the result").
+4. Validate the **Tool Calls** panel for traceability (name, duration, success/error).
+
+If a target is not deployed yet, deploy first. If deployment just started, wait a few seconds for runtime warm-up and retry.
+
+---
+
+## Next Steps
+
+1. **Create your first server** - Follow the guide above
+2. **Add governance policies** - Protect sensitive tools
+3. **Configure context** - Enable multi-tenant AI agents
+4. **Check your security score** - Use the **Security** tab in the server editor and address unmet criteria
+5. **Monitor healing** - Watch for recurring errors
+6. **Compose servers** - Build complex AI workflows
+
+---
+
+## Support
+
+- **MCP Documentation:** https://modelcontextprotocol.io
+- **Issues:** Open a GitHub issue
+
+---
+
+*Built with Go, React, and PostgreSQL*

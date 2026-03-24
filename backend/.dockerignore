@@ -1,0 +1,13 @@
+# Keep build context small (avoids multi-GB uploads from hosted/generated trees)
+generated-servers/
+.git
+.gitignore
+*.md
+.env
+.env.*
+**/*_test.go
+dist/
+tmp/
+temp/
+*.log
+.DS_Store

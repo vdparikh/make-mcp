@@ -1,0 +1,8 @@
+{
+  "title": "Sample series",
+  "labels": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  "datasets": [
+    { "label": "North", "data": [12, 19, 3, 8, 14] },
+    { "label": "South", "data": [4, 6, 11, 5, 9] }
+  ]
+}

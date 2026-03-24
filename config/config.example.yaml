@@ -1,0 +1,84 @@
+# Example configuration — copy to config.yaml and edit.
+
+server:
+  listen_host: "0.0.0.0"
+  listen_port: 8080
+  debug: false
+
+cors:
+  allowed_origins:
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"
+    - "http://127.0.0.1:6274"
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+    - "http://localhost:6274"
+
+webauthn:
+  rp_id: "localhost"
+  rp_origins:
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:5173"
+    - "http://localhost:3000"
+    - "http://localhost:5173"
+
+hosted:
+  container_dial_host: "127.0.0.1"
+  container_bind_host: "127.0.0.1"
+  generated_server_public_host_ip: "127.0.0.1"
+  observability_docker_host_alias: "host.docker.internal"
+  observability_replace_api_hosts:
+    - "127.0.0.1"
+    - "::1"
+    - "localhost"
+  # Optional: max resources and per-tier defaults for hosted MCP Docker containers.
+  runtime_isolation:
+    max_memory_mb: 4096
+    max_nano_cpus: 2000000000
+    max_pids: 512
+    tiers:
+      standard:
+        memory_mb: 512
+        nano_cpus: 500000000
+        pids: 128
+      restricted:
+        memory_mb: 384
+        nano_cpus: 350000000
+        pids: 96
+      strict:
+        memory_mb: 256
+        nano_cpus: 250000000
+        pids: 64
+
+urls:
+  mcp_hosted_base_url: ""
+  mcp_observability_ingest_base_url: ""
+
+paths:
+  docs_dir: ""
+
+# LLM providers — set api_key_env to an env var that holds the key (e.g. GROQ_API_KEY).
+# default_provider must name one of the enabled provider blocks below.
+llm:
+  default_provider: groq
+  providers:
+    groq:
+      type: openai_compatible
+      base_url: https://api.groq.com/openai/v1
+      model: llama-3.3-70b-versatile
+      api_key_env: GROQ_API_KEY
+      enabled: true
+    # Anthropic Claude (Messages API). type: anthropic — not OpenAI-compatible.
+    # anthropic:
+    #   type: anthropic
+    #   base_url: https://api.anthropic.com
+    #   model: claude-haiku-4-5-20251001
+    #   api_key_env: ANTHROPIC_API_KEY
+    #   max_tokens: 8192
+    #   enabled: true
+    # openai:
+    #   type: openai_compatible
+    #   base_url: https://api.openai.com/v1
+    #   model: gpt-4o-mini
+    #   api_key_env: OPENAI_API_KEY
+    #   enabled: false

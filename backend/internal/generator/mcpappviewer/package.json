@@ -1,0 +1,21 @@
+{
+  "name": "make-mcp-app-viewer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && mv -f ../embed/index.html ../embed/mcp-app-viewer.html && node scripts/strip-csp-eval.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.2.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.0",
+    "vite": "^5.4.21",
+    "vite-plugin-singlefile": "^2.0.1"
+  }
+}
