@@ -2108,7 +2108,7 @@ func (h *Handler) TestTool(c *gin.Context) {
 	}
 
 	start := time.Now()
-	result, statusCode, execErr := h.executeTool(tool, inputMap)
+	result, statusCode, execErr := h.executeTool(c.Request.Context(), tool, inputMap)
 	duration := time.Since(start).Milliseconds()
 
 	exec := &models.ToolExecution{
@@ -2242,7 +2242,7 @@ func wrapToolOutputForMCPApp(result interface{}) interface{} {
 	}
 }
 
-func (h *Handler) executeTool(tool *models.Tool, input map[string]interface{}) (interface{}, int, error) {
+func (h *Handler) executeTool(ctx stdcontext.Context, tool *models.Tool, input map[string]interface{}) (interface{}, int, error) {
 	switch tool.ExecutionType {
 	case models.ExecutionTypeRestAPI:
 		return h.executeRestAPI(tool, input)
@@ -2256,6 +2256,8 @@ func (h *Handler) executeTool(tool *models.Tool, input map[string]interface{}) (
 		return h.executeCLIPreview(tool, input)
 	case models.ExecutionTypeJavaScript, models.ExecutionTypePython:
 		return h.executeInProcessCodePreview(tool, input)
+	case models.ExecutionTypeFlow:
+		return h.executeFlowTool(ctx, tool, input)
 	default:
 		return map[string]interface{}{
 			"message": "Tool executed successfully (mock)",

@@ -181,7 +181,8 @@ The **flow** execution type lets you build a pipeline visually (nodes and edges)
 1. In the **Tools** tab, click **"Open Visual Builder"** (or add a tool and choose execution type **Flow**).
 2. Add nodes (e.g. HTTP request, transform, merge) and connect them with edges.
 3. Set the flow input and output. Save the flow.
-4. Use **"Convert to Tool"** to create a tool from the flow; the tool runs the pipeline when invoked.
+4. Use **Test** to run the flow in the UI: **REST API** nodes perform real `http`/`https` requests (same URL and method as in the node config). **Transform** uses a **dot path** into the previous JSON (e.g. `origin` after [httpbin.org/get](https://httpbin.org/get), or `headers.Host` for nested keys). Leave transform empty to pass the payload through.
+5. Use **"Convert to Tool"** to create a tool from the flow; the generated Node tool runs a richer pipeline (including JS-style expressions where supported).
 
 ### Step 4: Define Input Schema
 

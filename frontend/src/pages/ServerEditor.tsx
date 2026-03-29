@@ -712,6 +712,18 @@ export default function ServerEditor() {
       ? (server.tools.find((t) => t.id === focusedToolId)?.name ?? 'Tool')
       : 'Tool';
 
+  const workbenchFlowId =
+    focusedToolId && server.tools?.length
+      ? (() => {
+          const t = server.tools.find((x) => x.id === focusedToolId);
+          if (!t || t.execution_type !== 'flow' || t.execution_config == null || typeof t.execution_config !== 'object') {
+            return null;
+          }
+          const fid = (t.execution_config as { flow_id?: unknown }).flow_id;
+          return typeof fid === 'string' && fid.trim() !== '' ? fid.trim() : null;
+        })()
+      : null;
+
   const workbenchResourceName =
     selectedResourceId && server.resources?.length
       ? (server.resources.find((r) => r.id === selectedResourceId)?.name ?? 'Resource')
@@ -1107,15 +1119,17 @@ export default function ServerEditor() {
                       Visual Builder (pipelines only)
                     </h4>
                     <p style={{ margin: '0.25rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
-                      Build multi-tool pipelines with drag-and-drop — not for editing a single tool.
+                      Blank canvas. To change an existing flow, use <strong>Edit flow</strong> on its tool.
                     </p>
                   </div>
-                  <button 
+                  <button
+                    type="button"
                     className="btn btn-primary btn-sm"
                     onClick={() => navigate(`/servers/${id}/flow`)}
+                    title="Start a new flow (blank canvas). Use Edit flow on a flow-based tool to change an existing flow."
                   >
-                    <i className="bi bi-box-arrow-up-right"></i>
-                    Open Visual Builder
+                    <i className="bi bi-plus-lg me-1" aria-hidden="true" />
+                    New flow
                   </button>
                 </div>
               )}
@@ -1134,15 +1148,32 @@ export default function ServerEditor() {
                             {workbenchToolName}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-secondary"
-                          onClick={closeToolWorkbench}
-                          title="Back to all tools"
-                        >
-                          <i className="bi bi-x-lg me-1" />
-                          Close
-                        </button>
+                        <div className="d-flex flex-wrap align-items-center gap-2">
+                          {workbenchFlowId && id && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() =>
+                                navigate(
+                                  `/servers/${encodeURIComponent(id)}/flow?flowId=${encodeURIComponent(workbenchFlowId)}`
+                                )
+                              }
+                              title="Open this tool’s flow in the Visual Flow Builder"
+                            >
+                              <i className="bi bi-diagram-3 me-1" aria-hidden="true" />
+                              Edit flow
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary"
+                            onClick={closeToolWorkbench}
+                            title="Back to all tools"
+                          >
+                            <i className="bi bi-x-lg me-1" />
+                            Close
+                          </button>
+                        </div>
                       </div>
                       <p className="text-muted small mb-2 mb-md-3" style={{ fontSize: '0.8125rem' }}>
                         Edit, test, healing, and policies for this tool stay under Tools — use the sidebar for server-wide sections.

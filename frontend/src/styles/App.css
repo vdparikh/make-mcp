@@ -611,11 +611,12 @@ body {
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 12px;
+  border-radius: 0.5rem;
   padding: 1.25rem;
   margin-bottom: 1rem;
   transition: all 0.2s ease;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: none!important;
 }
 
 .card:hover {

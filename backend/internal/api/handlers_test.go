@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -307,7 +308,7 @@ func TestExecuteGraphQL(t *testing.T) {
 		ExecutionConfig: cfg,
 	}
 	h := &Handler{}
-	out, code, err := h.executeTool(tool, map[string]interface{}{"x": 1})
+	out, code, err := h.executeTool(context.Background(), tool, map[string]interface{}{"x": 1})
 	if err != nil {
 		t.Fatalf("executeTool: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestExecuteGraphQLErrors(t *testing.T) {
 	})
 	tool := &models.Tool{ExecutionType: models.ExecutionTypeGraphQL, ExecutionConfig: cfg}
 	h := &Handler{}
-	_, code, err := h.executeTool(tool, nil)
+	_, code, err := h.executeTool(context.Background(), tool, nil)
 	if err == nil {
 		t.Fatal("expected error from graphql errors array")
 	}
@@ -358,7 +359,7 @@ func TestExecuteDatabaseLearningSample(t *testing.T) {
 	})
 	tool := &models.Tool{ExecutionType: models.ExecutionTypeDatabase, ExecutionConfig: cfg}
 	h := &Handler{}
-	out, code, err := h.executeTool(tool, map[string]interface{}{"product_id": "99"})
+	out, code, err := h.executeTool(context.Background(), tool, map[string]interface{}{"product_id": "99"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +402,7 @@ func TestExecuteCLIPreview(t *testing.T) {
 				"env":              map[string]string{},
 			})
 			tool := &models.Tool{ExecutionType: models.ExecutionTypeCLI, ExecutionConfig: cfg}
-			out, code, err := h.executeTool(tool, map[string]interface{}{"message": "hi"})
+			out, code, err := h.executeTool(context.Background(), tool, map[string]interface{}{"message": "hi"})
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -433,7 +434,7 @@ func TestExecuteInProcessCodePreview(t *testing.T) {
 		ExecutionConfig: cfg,
 	}
 	h := &Handler{}
-	out, code, err := h.executeTool(tool, map[string]interface{}{"a": 1})
+	out, code, err := h.executeTool(context.Background(), tool, map[string]interface{}{"a": 1})
 	if err != nil || code != 200 {
 		t.Fatalf("err=%v code=%d", err, code)
 	}

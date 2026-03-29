@@ -61,8 +61,10 @@ const defaultNodes: Node[] = [
 
 const defaultEdges: Edge[] = [];
 
-let nodeId = 100;
-const getNodeId = () => `node_${nodeId++}`;
+/** Unique per node; must not collide with ids from loaded/saved flows (sequential counters did). */
+function newFlowNodeId(): string {
+  return `node_${crypto.randomUUID()}`;
+}
 
 export default function FlowBuilder({ 
   flowId,
@@ -86,6 +88,11 @@ export default function FlowBuilder({
       setEdges(initialFlow.edges);
       setFlowName(initialFlow.name || 'Untitled Flow');
       setFlowDescription(initialFlow.description || '');
+    } else {
+      setNodes(JSON.parse(JSON.stringify(defaultNodes)) as Node[]);
+      setEdges(JSON.parse(JSON.stringify(defaultEdges)) as Edge[]);
+      setFlowName('Untitled Flow');
+      setFlowDescription('');
     }
   }, [initialFlow, setNodes, setEdges]);
 
@@ -116,7 +123,7 @@ export default function FlowBuilder({
       });
 
       const newNode: Node = {
-        id: getNodeId(),
+        id: newFlowNodeId(),
         type,
         position,
         data: { 
@@ -250,27 +257,64 @@ export default function FlowBuilder({
               </Panel>
               
               <Panel position="top-right">
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setNodes(defaultNodes); setEdges(defaultEdges); }}>
-                    <i className="bi bi-arrow-counterclockwise"></i>
-                    Reset
-                  </button>
-                  {onExecute && (
-                    <button className="btn btn-success btn-sm" onClick={handleExecute}>
-                      <i className="bi bi-play-fill"></i>
-                      Test
+                <div
+                  style={{
+                    background: 'var(--card-bg)',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--card-border)',
+                    maxWidth: 'min(420px, 92vw)',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => setShowSaveModal(true)}
+                      title="Store this pipeline on the server (edit later anytime)"
+                    >
+                      <i className="bi bi-save" aria-hidden="true" />
+                      Save flow
                     </button>
-                  )}
-                  {onConvert && (
-                    <button className="btn btn-warning btn-sm" onClick={handleConvert}>
-                      <i className="bi bi-magic"></i>
-                      Convert to Tool
+                    {onExecute && (
+                      <button type="button" className="btn btn-success btn-sm" onClick={handleExecute} title="Run once with sample input (uses saved flow if already saved)">
+                        <i className="bi bi-play-fill" aria-hidden="true" />
+                        Test
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => {
+                        setNodes(JSON.parse(JSON.stringify(defaultNodes)) as Node[]);
+                        setEdges(JSON.parse(JSON.stringify(defaultEdges)) as Edge[]);
+                      }}
+                      title="Clear canvas back to the default trigger"
+                    >
+                      <i className="bi bi-arrow-counterclockwise" aria-hidden="true" />
+                      Reset canvas
                     </button>
-                  )}
-                  <button className="btn btn-primary btn-sm" onClick={() => setShowSaveModal(true)}>
-                    <i className="bi bi-save"></i>
-                    Save
-                  </button>
+                    {onConvert && (
+                      <button
+                        type="button"
+                        className="btn btn-warning btn-sm"
+                        onClick={handleConvert}
+                        disabled={!flowId}
+                        title={
+                          flowId
+                            ? 'Create a new MCP tool on this server that runs this flow'
+                            : 'Save the flow first — this creates a tool, it does not replace Save'
+                        }
+                      >
+                        <i className="bi bi-magic" aria-hidden="true" />
+                        Add as tool
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-muted small mb-0 mt-2" style={{ fontSize: '0.75rem', lineHeight: 1.35, textAlign: 'right' }}>
+                    <strong>Save flow</strong> keeps your pipeline on the server. <strong>Add as tool</strong> creates a separate MCP tool
+                    that runs this flow — you need both if you want a tool in the list.
+                  </p>
                 </div>
               </Panel>
             </ReactFlow>
@@ -292,7 +336,7 @@ export default function FlowBuilder({
         <div className="flow-modal-overlay" onClick={() => !isSaving && setShowSaveModal(false)}>
           <div className="flow-modal" onClick={(e) => e.stopPropagation()}>
             <div className="flow-modal-header">
-              <h3>Save Flow</h3>
+              <h3>Save flow</h3>
               <button className="btn btn-icon" onClick={() => setShowSaveModal(false)} disabled={isSaving}>
                 <i className="bi bi-x-lg"></i>
               </button>
@@ -318,15 +362,22 @@ export default function FlowBuilder({
                   rows={3}
                 />
               </div>
-              <div style={{ 
-                padding: '0.75rem',
-                background: 'var(--dark-bg)',
-                borderRadius: '8px',
-                fontSize: '0.8125rem',
-                color: 'var(--text-secondary)'
-              }}>
+              <p className="text-muted small mb-0">
+                This only saves the pipeline. To expose it as an MCP tool in your server list, use <strong>Add as tool</strong> on the canvas after saving.
+              </p>
+              <div
+                style={{
+                  padding: '0.75rem',
+                  background: 'var(--dark-bg)',
+                  borderRadius: '8px',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-secondary)',
+                  marginTop: '0.75rem',
+                }}
+              >
                 <i className="bi bi-info-circle" style={{ marginRight: '0.5rem', color: 'var(--primary-color)' }}></i>
-                This flow has <strong style={{ color: 'var(--text-primary)' }}>{nodes.length}</strong> nodes and <strong style={{ color: 'var(--text-primary)' }}>{edges.length}</strong> connections.
+                This flow has <strong style={{ color: 'var(--text-primary)' }}>{nodes.length}</strong> nodes and{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{edges.length}</strong> connections.
               </div>
             </div>
             <div className="flow-modal-footer">

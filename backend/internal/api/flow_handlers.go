@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,8 +38,7 @@ func (h *Handler) ExecuteFlow(c *gin.Context) {
 		return
 	}
 
-	// Execute the flow (simplified execution)
-	result, nodeResults := h.executeFlowNodes(nodes, edges, req.Input, req.Context)
+	result, nodeResults := h.executeFlowNodes(c.Request.Context(), nodes, edges, req.Input, req.Context)
 
 	c.JSON(http.StatusOK, models.FlowExecutionResponse{
 		Success:     result.Success,
@@ -49,8 +49,8 @@ func (h *Handler) ExecuteFlow(c *gin.Context) {
 	})
 }
 
-func (h *Handler) executeFlowNodes(nodes []models.FlowNode, edges []models.FlowEdge, input, ctx json.RawMessage) (models.FlowExecutionResponse, []models.NodeResult) {
-	_ = ctx // reserved for future context-aware execution
+func (h *Handler) executeFlowNodes(ctx context.Context, nodes []models.FlowNode, edges []models.FlowEdge, input, flowCtx json.RawMessage) (models.FlowExecutionResponse, []models.NodeResult) {
+	_ = flowCtx // reserved for future context injection into nodes
 	startTime := time.Now()
 	nodeResults := []models.NodeResult{}
 
@@ -114,20 +114,12 @@ func (h *Handler) executeFlowNodes(nodes []models.FlowNode, edges []models.FlowE
 		case "trigger":
 			nodeOutput = currentData
 		case "api":
-			// Parse node config and execute API call
-			var config struct {
-				URL     string            `json:"url"`
-				Method  string            `json:"method"`
-				Headers map[string]string `json:"headers"`
+			var errStr string
+			nodeOutput, errStr = flowExecuteHTTP(ctx, node.Data, currentData)
+			if errStr != "" {
+				success = false
+				nodeErr = errStr
 			}
-			json.Unmarshal(node.Data, &config)
-
-			// Simple simulation - in real implementation would make HTTP call
-			nodeOutput, _ = json.Marshal(map[string]interface{}{
-				"status": "simulated",
-				"config": config,
-				"input":  json.RawMessage(currentData),
-			})
 		case "cli":
 			// Parse CLI config
 			var config struct {
@@ -140,8 +132,18 @@ func (h *Handler) executeFlowNodes(nodes []models.FlowNode, edges []models.FlowE
 				"command": config.Command,
 			})
 		case "transform":
-			// Pass through with transformation note
-			nodeOutput = currentData
+			d, perr := parseFlowNodeData(node.Data)
+			if perr != nil {
+				success = false
+				nodeErr = "transform: invalid node data: " + perr.Error()
+			} else {
+				var errStr string
+				nodeOutput, errStr = flowTransformApply(currentData, d.Config.Expression)
+				if errStr != "" {
+					success = false
+					nodeErr = errStr
+				}
+			}
 		case "output":
 			finalOutput = currentData
 			nodeOutput = currentData
@@ -178,6 +180,52 @@ func (h *Handler) executeFlowNodes(nodes []models.FlowNode, edges []models.FlowE
 		Error:    lastError,
 		Duration: time.Since(startTime).Milliseconds(),
 	}, nodeResults
+}
+
+// executeFlowTool runs a flow tool whose execution_config stores nodes and edges (from Convert to Tool).
+func (h *Handler) executeFlowTool(ctx context.Context, tool *models.Tool, input map[string]interface{}) (interface{}, int, error) {
+	var cfg struct {
+		FlowID string `json:"flow_id"`
+		Nodes  []models.FlowNode `json:"nodes"`
+		Edges  []models.FlowEdge `json:"edges"`
+	}
+	if err := json.Unmarshal(tool.ExecutionConfig, &cfg); err != nil {
+		return nil, 0, fmt.Errorf("flow tool: invalid execution config: %w", err)
+	}
+	if len(cfg.Nodes) == 0 {
+		return nil, 0, fmt.Errorf("flow tool: no nodes in execution config")
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return nil, 0, fmt.Errorf("flow tool: marshal input: %w", err)
+	}
+	flowCtx := json.RawMessage(`{}`)
+
+	resp, nodeResults := h.executeFlowNodes(ctx, cfg.Nodes, cfg.Edges, inputJSON, flowCtx)
+
+	var result interface{}
+	if len(resp.Output) > 0 {
+		if err := json.Unmarshal(resp.Output, &result); err != nil {
+			result = string(resp.Output)
+		}
+	}
+
+	out := map[string]interface{}{
+		"success":      resp.Success,
+		"result":       result,
+		"node_results": nodeResults,
+		"flow_id":      cfg.FlowID,
+	}
+	if resp.Error != "" {
+		out["error"] = resp.Error
+	}
+	if !resp.Success {
+		if resp.Error != "" {
+			return out, 500, fmt.Errorf("%s", resp.Error)
+		}
+		return out, 500, fmt.Errorf("flow execution failed")
+	}
+	return out, 200, nil
 }
 
 // ConvertFlowToTool converts a flow to a tool configuration

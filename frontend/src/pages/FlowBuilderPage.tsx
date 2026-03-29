@@ -8,7 +8,6 @@ import {
   createFlow,
   updateFlow,
   getFlow,
-  getServerFlows,
   executeFlow,
   convertFlowToTool,
   type Flow,
@@ -25,7 +24,6 @@ export default function FlowBuilderPage() {
   
   const [loading, setLoading] = useState(false);
   const [currentFlow, setCurrentFlow] = useState<Flow | null>(null);
-  const [serverFlows, setServerFlows] = useState<Flow[]>([]);
   const [showTestPanel, setShowTestPanel] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [testInput, setTestInput] = useState('{\n  "query": "test input"\n}');
@@ -40,11 +38,10 @@ export default function FlowBuilderPage() {
   useEffect(() => {
     if (flowId) {
       loadFlow(flowId);
+    } else {
+      setCurrentFlow(null);
     }
-    if (serverId) {
-      loadServerFlows(serverId);
-    }
-  }, [flowId, serverId]);
+  }, [flowId]);
 
   // Show error if no server ID
   if (!serverId) {
@@ -91,15 +88,6 @@ export default function FlowBuilderPage() {
     }
   };
 
-  const loadServerFlows = async (serverId: string) => {
-    try {
-      const flows = await getServerFlows(serverId);
-      setServerFlows(flows);
-    } catch {
-      console.error('Failed to load flows');
-    }
-  };
-
   const handleSave = async (flowData: FlowData) => {
     if (!serverId) {
       toast.error('Server ID is required');
@@ -137,9 +125,6 @@ export default function FlowBuilderPage() {
         navigate(`/servers/${serverId}/flow?flowId=${created.id}`, { replace: true });
       }
       
-      if (serverId) {
-        loadServerFlows(serverId);
-      }
     } catch (err) {
       toast.error('Failed to save flow');
       console.error(err);
@@ -273,40 +258,19 @@ export default function FlowBuilderPage() {
             Build tool pipelines visually by dragging and connecting nodes
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          {serverFlows.length > 0 && (
-            <select
-              className="form-control"
-              style={{ width: '200px' }}
-              value={flowId || ''}
-              onChange={(e) => {
-                if (e.target.value) {
-                  navigate(`/servers/${serverId}/flow?flowId=${e.target.value}`);
-                } else {
-                  setCurrentFlow(null);
-                  navigate(`/servers/${serverId}/flow`);
-                }
-              }}
-            >
-              <option value="">New Flow</option>
-              {serverFlows.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          )}
-          <Link to={serverId ? `/servers/${serverId}` : '/'} className="btn btn-secondary">
-            <i className="bi bi-arrow-left"></i>
-            Back to Editor
-          </Link>
-        </div>
+        <Link to={serverId ? `/servers/${serverId}` : '/'} className="btn btn-secondary btn-sm">
+          <i className="bi bi-arrow-left" aria-hidden="true" />
+          Back to server
+        </Link>
       </div>
 
       <div style={{ display: 'flex', gap: '1rem' }}>
         <div style={{ flex: 1 }}>
-          <FlowBuilder 
+          <FlowBuilder
+            key={flowId ?? 'draft'}
             flowId={currentFlow?.id}
             initialFlow={initialFlow}
-            onSave={handleSave} 
+            onSave={handleSave}
             onExecute={handleExecute}
             onConvert={handleConvert}
           />
@@ -477,30 +441,35 @@ export default function FlowBuilderPage() {
           Quick Tips
         </h4>
         <ul style={{ color: 'var(--text-secondary)', fontSize: '0.8125rem', margin: 0, paddingLeft: '1.25rem' }}>
+          <li>
+            Start from the server (<strong>New flow</strong>) or open an existing flow with <strong>Edit flow</strong> on a flow-based tool
+          </li>
           <li>Drag nodes from the palette on the left to add them to the canvas</li>
           <li>Connect nodes by dragging from output handles (right) to input handles (left)</li>
           <li>Click a node to configure it in the right panel</li>
           <li>Save your flow first, then use "Test" to execute it with sample input</li>
-          <li>Use "Convert to Tool" to turn your flow into a regular tool that can be exported</li>
+          <li>
+            After <strong>Save flow</strong>, use <strong>Add as tool</strong> if you want an MCP tool on this server (that is separate from saving the graph)
+          </li>
         </ul>
       </div>
 
-      {/* Convert to Tool Modal */}
+      {/* Add as tool modal */}
       {showConvertModal && (
         <div className="flow-modal-overlay" onClick={() => setShowConvertModal(false)}>
           <div className="flow-modal" onClick={(e) => e.stopPropagation()}>
             <div className="flow-modal-header">
               <h3>
                 <i className="bi bi-magic" style={{ marginRight: '0.5rem', color: 'var(--warning-color)' }}></i>
-                Convert Flow to Tool
+                Add as MCP tool
               </h3>
-              <button className="btn btn-icon" onClick={() => setShowConvertModal(false)}>
+              <button type="button" className="btn btn-icon" onClick={() => setShowConvertModal(false)}>
                 <i className="bi bi-x-lg"></i>
               </button>
             </div>
             <div className="flow-modal-body">
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                This will create a new tool based on your flow configuration. The tool will reference this flow and can be exported with your server.
+                Creates a <strong>new tool</strong> on this server that runs this saved flow. This is not the same as <strong>Save flow</strong> (which only stores the graph).
               </p>
               
               <div className="form-group">
@@ -562,12 +531,12 @@ export default function FlowBuilderPage() {
                 {converting ? (
                   <>
                     <span className="spinner-border spinner-border-sm" style={{ marginRight: '0.5rem' }}></span>
-                    Converting...
+                    Adding tool...
                   </>
                 ) : (
                   <>
                     <i className="bi bi-magic"></i>
-                    Create Tool
+                    Add tool
                   </>
                 )}
               </button>

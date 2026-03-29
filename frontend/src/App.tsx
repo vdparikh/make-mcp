@@ -48,8 +48,10 @@ function AppLayout() {
     <div className="app-container">
       <Sidebar />
       <main className="main-content">
-        <div className="main-content-container">
-          <Routes>
+        <div className="main-content-container container-fluid">
+          <div className="row">
+            <div className="col-12">
+            <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/servers/:id" element={<ServerEditor />} />
             <Route path="/servers/:id/flow" element={<FlowBuilderPage />} />
@@ -64,6 +66,8 @@ function AppLayout() {
             <Route path="/docs" element={<Docs />} />
             <Route path="/deploy" element={<DeployFlowPage />} />
           </Routes>
+            </div>
+          </div>
         </div>
       </main>
       <TryChatModal />

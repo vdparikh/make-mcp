@@ -123,10 +123,10 @@ export default function NodeConfigPanel({ node, onUpdate, onDelete, onClose }: N
       case 'transform':
         return (
           <div className="config-field">
-            <label>Expression</label>
+            <label>Field path (Test Flow)</label>
             <input
               type="text"
-              placeholder="data.items.map(i => i.name)"
+              placeholder="origin"
               value={node.data.config?.expression || ''}
               onChange={(e) => {
                 const newConfig = { ...node.data.config, expression: e.target.value };
@@ -134,6 +134,9 @@ export default function NodeConfigPanel({ node, onUpdate, onDelete, onClose }: N
                 onUpdate(node.id, { config: newConfig });
               }}
             />
+            <small className="text-muted d-block mt-1">
+              Dot path into the previous node&apos;s JSON (e.g. <code>origin</code>, <code>headers.Host</code>). Leave empty to pass data through. The generated tool can use richer expressions when you convert the flow.
+            </small>
           </div>
         );
       

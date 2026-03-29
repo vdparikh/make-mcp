@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import Editor from '@monaco-editor/react';
 import type { Tool, ExecutionType, OutputDisplayConfig, FormFieldConfig } from '../types';
@@ -68,6 +69,7 @@ interface AuthConfig {
 
 const executionTypes: { value: ExecutionType; label: string; icon: string; description?: string }[] = [
   { value: 'rest_api', label: 'REST API', icon: 'bi-globe', description: 'Call external REST APIs' },
+  { value: 'flow', label: 'Visual Flow', icon: 'bi-diagram-2', description: 'Pipeline from the Flow Builder (nodes + edges)' },
   { value: 'graphql', label: 'GraphQL', icon: 'bi-diagram-3', description: 'Execute GraphQL queries' },
   { value: 'webhook', label: 'Webhook', icon: 'bi-link-45deg', description: 'Send data to webhooks' },
   { value: 'cli', label: 'CLI Command', icon: 'bi-terminal', description: 'Execute shell commands' },
@@ -348,6 +350,25 @@ const cliTemplates: { name: string; icon: string; command: string; description: 
   },
 ];
 
+/** flow_id is stored in execution_config when a tool is created via Add as tool in the Flow Builder. */
+function parseFlowIdFromExecutionConfig(tool: Tool | null, executionConfigJson: string): string | null {
+  if (tool?.execution_config != null && typeof tool.execution_config === 'object') {
+    const fid = (tool.execution_config as { flow_id?: unknown }).flow_id;
+    if (typeof fid === 'string' && fid.trim() !== '') {
+      return fid.trim();
+    }
+  }
+  try {
+    const p = JSON.parse(executionConfigJson || '{}') as { flow_id?: string };
+    if (typeof p.flow_id === 'string' && p.flow_id.trim() !== '') {
+      return p.flow_id.trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 const authTypes: { value: AuthType; label: string; icon: string; description: string }[] = [
   { value: 'none', label: 'No Authentication', icon: 'bi-unlock', description: 'Public API, no auth required' },
   { value: 'api_key', label: 'API Key', icon: 'bi-key', description: 'API key in header or query param' },
@@ -357,6 +378,7 @@ const authTypes: { value: AuthType; label: string; icon: string; description: st
 ];
 
 export default function ToolEditor({ serverId, tools, onToolCreated, onToolDeleted, focusToolId, onCloseEdit, onNavigateToSection, hideSectionNav, onRequestWorkbenchFocus }: Props) {
+  const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'auth' | 'schema' | 'config'>('basic');
@@ -905,6 +927,8 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
     switch (type) {
       case 'rest_api':
         return '{\n  "url": "https://api.example.com/endpoint",\n  "method": "GET",\n  "headers": {}\n}';
+      case 'flow':
+        return '{\n  "flow_id": "",\n  "flow_name": "",\n  "flow_description": "",\n  "nodes": [],\n  "edges": []\n}';
       case 'graphql':
         return '{\n  "url": "https://api.example.com/graphql",\n  "query": "query { ... }",\n  "headers": {}\n}';
       case 'webhook':
@@ -1356,6 +1380,32 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
                       </option>
                     ))}
                   </select>
+                  {executionType === 'flow' && (
+                    <div className="mt-2">
+                      {(() => {
+                        const flowId = parseFlowIdFromExecutionConfig(editingTool, executionConfig);
+                        if (flowId && serverId) {
+                          return (
+                            <button
+                              type="button"
+                              className="btn btn-outline-primary btn-sm"
+                              onClick={() =>
+                                navigate(`/servers/${encodeURIComponent(serverId)}/flow?flowId=${encodeURIComponent(flowId)}`)
+                              }
+                            >
+                              <i className="bi bi-diagram-3 me-1" aria-hidden="true" />
+                              Edit flow in Visual Builder
+                            </button>
+                          );
+                        }
+                        return (
+                          <small className="text-muted">
+                            Link to the flow appears after you create this tool via <strong>Add as tool</strong> from a saved flow (execution config must include <code>flow_id</code>).
+                          </small>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1921,10 +1971,17 @@ export default function ToolEditor({ serverId, tools, onToolCreated, onToolDelet
                       fontSize: 13,
                       lineNumbers: 'off',
                       folding: false,
+                      readOnly: executionType === 'flow',
                     }}
                   />
                 </div>
-                
+                {executionType === 'flow' && (
+                  <p className="text-muted small mt-2 mb-0">
+                    <i className="bi bi-info-circle me-1"></i>
+                    Flow structure is managed in the Visual Flow Builder. Use <strong>Add as tool</strong> from a saved flow, or edit the flow and add again — avoid changing execution type away from Visual Flow unless you mean to replace this tool.
+                  </p>
+                )}
+
                 {/* CLI-specific help */}
                 {executionType === 'cli' && (
                   <div style={{ 

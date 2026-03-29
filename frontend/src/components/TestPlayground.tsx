@@ -676,7 +676,7 @@ export default function TestPlayground({ serverId, tools, initialToolId, onOpenE
     [tools, context, hasEnvProfiles, selectedEnvProfile],
   );
   
-  const isLiveExecutable = (type: string) => ['rest_api', 'webhook'].includes(type);
+  const isLiveExecutable = (type: string) => ['rest_api', 'webhook', 'flow'].includes(type);
   const isMocked = selectedToolData && !isLiveExecutable(selectedToolData.execution_type);
 
   const handleTest = async () => {

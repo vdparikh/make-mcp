@@ -1,6 +1,6 @@
 # Make MCP website
 
-Static landing page for [Make MCP](https://github.com/vdparikh/make-mcp), inspired by [Electron](https://www.electronjs.org/).
+Static site for [Make MCP](https://github.com/vdparikh/make-mcp): Mintlify-style docs layout (sidebar, sticky top bar, “On this page” TOC) with the same Lexend font and blue palette as the web app (`App.css`).
 
 ## Deploy to GitHub Pages
 
