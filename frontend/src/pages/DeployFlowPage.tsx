@@ -61,6 +61,20 @@ type DeployTargetOption = {
   subtitle: string;
 };
 
+function deployFlowApiErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const r = (err as { response?: { data?: unknown; status?: number } }).response;
+    const d = r?.data;
+    if (typeof d === 'object' && d !== null && 'error' in d && typeof (d as { error: unknown }).error === 'string') {
+      return (d as { error: string }).error;
+    }
+    if (typeof d === 'string') return d;
+    if (r?.status) return `Request failed (HTTP ${r.status})`;
+  }
+  if (err instanceof Error) return err.message;
+  return 'Hosted publish failed';
+}
+
 export default function DeployFlowPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -445,14 +459,10 @@ export default function DeployFlowPage() {
       } else {
         await compositionHostedDeploy(targetId, envProfile || undefined, idleTimeoutMinutes, hostedAuthMode, requireCallerIdentity);
       }
-      toast.success('Hosted MCP published');
+      toast.success('Hosted MCP published', { autoClose: 8000 });
       await refreshHostedStatus();
     } catch (err: unknown) {
-      const message =
-        typeof err === 'object' && err !== null && 'response' in err
-          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-          : undefined;
-      toast.error(message || 'Hosted publish failed');
+      toast.error(deployFlowApiErrorMessage(err), { autoClose: 12000 });
     } finally {
       setPublishingHosted(false);
     }
@@ -789,6 +799,13 @@ export default function DeployFlowPage() {
               </button>
             </div>
           </div>
+
+          {publishingHosted && (
+            <div className="alert alert-info mb-3" role="status">
+              <strong>Publishing…</strong> This can take several minutes (install dependencies, build, and health check).
+              Keep this tab open — the button shows &quot;Publishing…&quot; until the server responds.
+            </div>
+          )}
 
           <div className="deploy-live-runtime">
             <div className="deploy-live-runtime-header">

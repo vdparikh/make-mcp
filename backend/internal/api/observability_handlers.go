@@ -40,9 +40,14 @@ func (h *Handler) IngestObservabilityEvents(c *gin.Context) {
 	}
 	accepted := 0
 	for _, ev := range req.Events {
-		toolID := toolByName[strings.TrimSpace(ev.ToolName)]
-		if toolID == "" {
+		toolName := strings.TrimSpace(ev.ToolName)
+		if toolName == "" {
 			continue
+		}
+		toolID := toolByName[toolName]
+		if toolID == "" {
+			// Snapshot / hosted / marketplace rows can diverge from tools table; still record the event by name.
+			fmt.Printf("IngestObservabilityEvents: server=%s tool_name=%q has no matching tools row; logging with null tool_id\n", server.ID, toolName)
 		}
 		exec := &models.ToolExecution{
 			ToolID:           toolID,

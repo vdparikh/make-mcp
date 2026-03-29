@@ -45,6 +45,16 @@ type Config struct {
 	} `yaml:"webauthn"`
 
 	Hosted struct {
+		// Runtime selects how hosted MCP processes run: "docker" (default) or "kubernetes".
+		Runtime string `yaml:"runtime"`
+		// Kubernetes configures the hosted runtime when Runtime is "kubernetes".
+		Kubernetes struct {
+			// Namespace is where hosted Pods and Services are created (often the same as the API namespace).
+			Namespace string `yaml:"namespace"`
+			// NodeGeneratedRoot is the host path where generated-servers/<user>/<server>/<version> is stored;
+			// it must match the API pod hostPath volume for generated code.
+			NodeGeneratedRoot string `yaml:"node_generated_root"`
+		} `yaml:"kubernetes"`
 		// ContainerDialHost is the host the API uses to reach published MCP containers (Docker host port binding).
 		ContainerDialHost string `yaml:"container_dial_host"`
 		// ContainerBindHost is the Docker port binding HostIP (who may connect to the mapped port).
@@ -135,6 +145,21 @@ func (c *Config) validate() error {
 	for i, o := range c.WebAuthn.RPOrigins {
 		if strings.TrimSpace(o) == "" {
 			return fmt.Errorf("config: webauthn.rp_origins[%d] is empty", i)
+		}
+	}
+	runtime := strings.ToLower(strings.TrimSpace(c.Hosted.Runtime))
+	if runtime == "" {
+		runtime = "docker"
+	}
+	if runtime != "docker" && runtime != "kubernetes" && runtime != "k8s" {
+		return fmt.Errorf("config: hosted.runtime must be docker or kubernetes")
+	}
+	if runtime == "kubernetes" || runtime == "k8s" {
+		if strings.TrimSpace(c.Hosted.Kubernetes.Namespace) == "" {
+			return fmt.Errorf("config: hosted.kubernetes.namespace is required when hosted.runtime is kubernetes")
+		}
+		if strings.TrimSpace(c.Hosted.Kubernetes.NodeGeneratedRoot) == "" {
+			return fmt.Errorf("config: hosted.kubernetes.node_generated_root is required when hosted.runtime is kubernetes")
 		}
 	}
 	if strings.TrimSpace(c.Hosted.ContainerDialHost) == "" {

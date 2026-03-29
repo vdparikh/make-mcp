@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -88,6 +89,45 @@ func NewService(cfg *Config) (*Service, error) {
 		}
 	}
 	return svc, nil
+}
+
+// StaticProviderMetadata returns provider rows from YAML for UI (Try Chat session settings) when NewService
+// fails or is unavailable — e.g. Kubernetes ConfigMap has llm: but GROQ_API_KEY is not in the pod env yet.
+// Enabled is always false here; live chat still requires a constructed *Service with valid API keys.
+func StaticProviderMetadata(cfg *Config) (defaultProvider string, infos []ProviderInfo) {
+	if cfg == nil || len(cfg.Providers) == 0 {
+		return "", nil
+	}
+	defaultProvider = strings.TrimSpace(cfg.DefaultProvider)
+	if defaultProvider == "" {
+		for name, p := range cfg.Providers {
+			if p.Enabled {
+				defaultProvider = name
+				break
+			}
+		}
+	}
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		p := cfg.Providers[name]
+		if !p.Enabled {
+			continue
+		}
+		infos = append(infos, ProviderInfo{
+			Name:    name,
+			Type:    p.Type,
+			Model:   p.Model,
+			Enabled: false,
+		})
+	}
+	if defaultProvider == "" && len(infos) > 0 {
+		defaultProvider = infos[0].Name
+	}
+	return defaultProvider, infos
 }
 
 func (s *Service) ProviderInfos() []ProviderInfo {

@@ -1,4 +1,4 @@
-.PHONY: all backend frontend dev db clean docker-up docker-down
+.PHONY: all backend frontend dev db clean skaffold-dev skaffold-stop
 
 all: dev
 
@@ -49,13 +49,13 @@ build-frontend:
 # Build all
 build: build-backend build-frontend
 
-# Run with Docker Compose
-docker-up:
-	docker-compose up --build -d
+# Run full stack on local Kubernetes (keeps namespace/PVC on exit)
+skaffold-dev:
+	./scripts/skaffold-dev.sh
 
-# Stop Docker Compose
-docker-down:
-	docker-compose down
+# Scale app + postgres to 0 in make-mcp (keeps namespace and PVCs)
+skaffold-stop:
+	./scripts/skaffold-stop.sh
 
 # Clean up
 clean:

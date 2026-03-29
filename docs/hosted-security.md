@@ -27,7 +27,7 @@ Set via:
 2. **Build JSON** using the schema below. At minimum for OIDC you need **`oidc.issuer`** (your realm issuer URL). Optional: **`oidc.audience`**, **`oidc.jwks_url`** (if discovery is blocked; otherwise leave empty and JWKS is discovered).
 3. **Paste** into **Deploy → Hosted → Advanced security profile** (or send in the publish / `PUT` body as `hosted_security_config`).
 4. **Publish** (or `PUT`) so the server row is updated.
-5. **Match Docker vs host**: If the Make MCP API runs **inside Docker**, `{issuer}/.well-known/...` must resolve **inside that network** (e.g. `http://keycloak:8080/realms/...`). The JWT **`iss`** claim must **exactly equal** `oidc.issuer`. See **[Keycloak local OIDC](./keycloak-local-oidc.md)** for a compose IdP and issuer pitfalls.
+5. **Match runtime network**: `{issuer}/.well-known/...` must resolve from the **process running the Make MCP API** (host, Kubernetes pod, or a container network). The JWT **`iss`** claim must **exactly equal** `oidc.issuer`. See **[Keycloak local OIDC](./keycloak-local-oidc.md)** for a standalone Keycloak container and issuer pitfalls.
 
 ## Headers (client → API)
 
@@ -130,7 +130,7 @@ Events include **config saves** and **hosted access key rotation** with **actor 
 ## Related
 
 - [Hosted OAuth BFF](./hosted-oauth-bff.md) — browser OAuth via Make MCP (`/.well-known/...`, `/api/oauth/*`)  
-- [Keycloak local OIDC](./keycloak-local-oidc.md) — Docker Compose IdP for testing  
+- [Keycloak local OIDC](./keycloak-local-oidc.md) — local Keycloak (`docker run`) for testing  
 - [Security best practices](./security-best-practices.md)  
 - [Configuration](../CONFIGURATION.md)  
 - [Getting started](./getting-started.md) (Try Chat, observability)

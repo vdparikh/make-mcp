@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: make-mcp
+  labels:
+    app.kubernetes.io/name: make-mcp
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: make-mcp
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: make-mcp
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: make-mcp-backend
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: make-mcp-secrets
+                  key: postgres-password
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres.make-mcp.svc.cluster.local -U postgres; do sleep 1; done
+      containers:
+        - name: backend
+          image: make-mcp-backend
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: MAKE_MCP_CONFIG
+              value: /config/app.config.yaml
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: make-mcp-secrets
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: make-mcp-secrets
+                  key: jwt-secret
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: make-mcp-secrets
+                  key: groq-api-key
+                  optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /config/app.config.yaml
+              subPath: app.config.yaml
+              readOnly: true
+            - name: hosted-generated
+              mountPath: /app/generated-servers
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: make-mcp-config
+        - name: hosted-generated
+          hostPath:
+            path: /var/lib/make-mcp/generated-servers
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: make-mcp
+  labels:
+    app.kubernetes.io/name: make-mcp
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: make-mcp
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
