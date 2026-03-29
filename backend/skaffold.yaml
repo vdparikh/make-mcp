@@ -1,0 +1,9 @@
+# Delegate to the repo-root Skaffold config so you can run `skaffold dev` from `backend/`.
+
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: make-mcp-backend
+requires:
+  - path: ../
+    configs: [make-mcp]

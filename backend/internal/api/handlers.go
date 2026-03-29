@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -46,7 +47,7 @@ type Handler struct {
 	openapiParser *openapi.Parser
 	webauthn      *webauthnlib.WebAuthn
 	sessionStore  *webauthnpkg.SessionStore
-	hostedMgr     *hosted.Manager
+	hostedMgr     hosted.Runtime
 	llmService    *llm.Service
 	cfg           *config.Config
 }
@@ -60,16 +61,32 @@ const (
 	hostedAuthModeMTLS        = "mtls"
 )
 
+func newHostedRuntime(db *database.DB, cfg *config.Config) (hosted.Runtime, error) {
+	rt := strings.ToLower(strings.TrimSpace(cfg.Hosted.Runtime))
+	if rt == "" {
+		rt = "docker"
+	}
+	switch rt {
+	case "kubernetes", "k8s":
+		return hosted.NewK8sManager(db, cfg.Hosted.Kubernetes.Namespace, cfg.Hosted.Kubernetes.NodeGeneratedRoot, cfg.Hosted.ContainerBindHost, cfg.Hosted.GeneratedServerPublicHostIP)
+	default:
+		return hosted.NewManager(db, cfg.Hosted.ContainerBindHost, cfg.Hosted.GeneratedServerPublicHostIP)
+	}
+}
+
 // NewHandler creates a new API handler
 func NewHandler(db *database.DB, wa *webauthnlib.WebAuthn, sessionStore *webauthnpkg.SessionStore, cfg *config.Config) (*Handler, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
-	hm, err := hosted.NewManager(db, cfg.Hosted.ContainerBindHost, cfg.Hosted.GeneratedServerPublicHostIP)
+	hm, err := newHostedRuntime(db, cfg)
 	if err != nil {
 		return nil, err
 	}
-	llmSvc, _ := llm.NewService(&cfg.LLM)
+	llmSvc, llmErr := llm.NewService(&cfg.LLM)
+	if llmErr != nil {
+		log.Printf("api: LLM features disabled (Try Chat): %v", llmErr)
+	}
 	return &Handler{
 		db:            db,
 		generator:     generator.NewGeneratorWithPublicHost(cfg.Hosted.GeneratedServerPublicHostIP),
@@ -381,16 +398,17 @@ type tryTargetRuntime struct {
 }
 
 func (h *Handler) GetTryConfig(c *gin.Context) {
-	if h.llmService == nil {
+	if h.llmService != nil {
 		c.JSON(http.StatusOK, TryConfigResponse{
-			DefaultProvider: "",
-			Providers:       []llm.ProviderInfo{},
+			DefaultProvider: h.llmService.DefaultProvider(),
+			Providers:       h.llmService.ProviderInfos(),
 		})
 		return
 	}
+	def, infos := llm.StaticProviderMetadata(&h.cfg.LLM)
 	c.JSON(http.StatusOK, TryConfigResponse{
-		DefaultProvider: h.llmService.DefaultProvider(),
-		Providers:       h.llmService.ProviderInfos(),
+		DefaultProvider: def,
+		Providers:       infos,
 	})
 }
 
@@ -733,7 +751,7 @@ func (h *Handler) callTryHostedRPC(ctx stdcontext.Context, cfg *hosted.Container
 	}
 	client := &http.Client{Timeout: 25 * time.Second}
 	var lastErr error
-	dialHost := strings.TrimSpace(h.cfg.Hosted.ContainerDialHost)
+	dialHost := hosted.DialHost(cfg, strings.TrimSpace(h.cfg.Hosted.ContainerDialHost))
 	u := "http://" + net.JoinHostPort(dialHost, cfg.HostPort)
 	for attempt := 0; attempt < 20; attempt++ {
 		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(body))

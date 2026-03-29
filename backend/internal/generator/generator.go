@@ -768,7 +768,7 @@ async function reportObservabilityEvent(
     if (resolvedAgent) ev.client_agent = resolvedAgent.slice(0, 120);
     if (MCP_OBSERVABILITY_USER_TOKEN) ev.client_token = MCP_OBSERVABILITY_USER_TOKEN;
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 3000);
+    const t = setTimeout(() => controller.abort(), 10000);
     await fetch(MCP_OBSERVABILITY_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

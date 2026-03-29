@@ -843,15 +843,19 @@ export const hostedPublish = async (
   hostedSecurityConfig?: Record<string, unknown>,
   hostedRuntimeConfig?: Record<string, unknown>
 ): Promise<HostedPublishResponse> => {
-  const { data } = await api.post<HostedPublishResponse>(`/servers/${serverId}/hosted-publish`, {
-    version: version || '',
-    env_profile: envProfile || undefined,
-    idle_timeout_minutes: idleTimeoutMinutes,
-    hosted_auth_mode: hostedAuthMode,
-    require_caller_identity: requireCallerIdentity,
-    hosted_security_config: hostedSecurityConfig,
-    hosted_runtime_config: hostedRuntimeConfig,
-  });
+  const { data } = await api.post<HostedPublishResponse>(
+    `/servers/${serverId}/hosted-publish`,
+    {
+      version: version || '',
+      env_profile: envProfile || undefined,
+      idle_timeout_minutes: idleTimeoutMinutes,
+      hosted_auth_mode: hostedAuthMode,
+      require_caller_identity: requireCallerIdentity,
+      hosted_security_config: hostedSecurityConfig,
+      hosted_runtime_config: hostedRuntimeConfig,
+    },
+    { timeout: 900_000 }
+  );
   return data;
 };
 
@@ -948,12 +952,16 @@ export const marketplaceHostedDeploy = async (
   hostedAuthMode?: HostedAuthMode,
   requireCallerIdentity?: boolean
 ): Promise<HostedStatusResponse> => {
-  const { data } = await api.post<HostedStatusResponse>(`/marketplace/${serverId}/hosted-deploy`, {
-    env_profile: envProfile || undefined,
-    idle_timeout_minutes: idleTimeoutMinutes,
-    hosted_auth_mode: hostedAuthMode,
-    require_caller_identity: requireCallerIdentity,
-  });
+  const { data } = await api.post<HostedStatusResponse>(
+    `/marketplace/${serverId}/hosted-deploy`,
+    {
+      env_profile: envProfile || undefined,
+      idle_timeout_minutes: idleTimeoutMinutes,
+      hosted_auth_mode: hostedAuthMode,
+      require_caller_identity: requireCallerIdentity,
+    },
+    { timeout: 900_000 }
+  );
   return data;
 };
 
@@ -969,12 +977,16 @@ export const compositionHostedDeploy = async (
   hostedAuthMode?: HostedAuthMode,
   requireCallerIdentity?: boolean
 ): Promise<HostedStatusResponse> => {
-  const { data } = await api.post<HostedStatusResponse>(`/compositions/${compositionId}/hosted-deploy`, {
-    env_profile: envProfile || undefined,
-    idle_timeout_minutes: idleTimeoutMinutes,
-    hosted_auth_mode: hostedAuthMode,
-    require_caller_identity: requireCallerIdentity,
-  });
+  const { data } = await api.post<HostedStatusResponse>(
+    `/compositions/${compositionId}/hosted-deploy`,
+    {
+      env_profile: envProfile || undefined,
+      idle_timeout_minutes: idleTimeoutMinutes,
+      hosted_auth_mode: hostedAuthMode,
+      require_caller_identity: requireCallerIdentity,
+    },
+    { timeout: 900_000 }
+  );
   return data;
 };
 

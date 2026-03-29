@@ -27,12 +27,14 @@ A UI-driven platform to create **Model Context Protocol (MCP) servers** without 
 
 - **Go 1.22+**
 - **Node.js 20+**
-- **PostgreSQL 16+** (or Docker)
+- **Kubernetes** cluster, **kubectl**, **Skaffold**, and a container image builder (e.g. Docker) — for the **recommended** full-stack run — *or* **PostgreSQL 16+** if you only use the manual path below
 
-### Option 1: Docker Compose (Recommended)
+### Option 1: Kubernetes + Skaffold (recommended)
+
+From the repository root (see **[CONFIGURATION.md](../CONFIGURATION.md)** for secrets and cleanup behavior):
 
 ```bash
-docker-compose up --build
+./scripts/skaffold-dev.sh
 ```
 
 Open http://localhost:3000
@@ -59,13 +61,13 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. You will need to **log in** or **register**. On first run, a default demo user is created: **demo@example.com** / **demo123**. A **Demo API Toolkit** server is also seeded for that user with 8 tools, sample resources, prompts, context configs, and policies.
+Open http://localhost:3000. **Sign up** with your email and name, then register a **passkey** (WebAuthn) — there are no passwords and the app does **not** create a default user. After you are signed in, create a server from scratch or use a template (e.g. **Demo API Toolkit**, **MCP Production Blueprint**) from the dashboard.
 
 ---
 
-## Demo Server (Auto-Created)
+## Demo API Toolkit (template)
 
-When you first start the platform, a **Demo API Toolkit** server is automatically seeded with:
+If you add the **Demo API Toolkit** from the UI, you get a ready-made server with:
 
 ### 8 Working Tools (Free APIs, No Auth Required)
 
@@ -146,7 +148,8 @@ make-mcp/
 │   ├── creating-servers.md
 │   ├── compositions.md
 │   └── security-best-practices.md
-├── docker-compose.yml
+├── k8s/                              # Kubernetes manifests (Skaffold)
+├── skaffold.yaml
 └── Makefile
 ```
 
@@ -770,11 +773,15 @@ Here's a complete example using the free [Zippopotam.us](https://api.zippopotam.
 make dev
 ```
 
-### Docker Compose
+### Local Kubernetes (Skaffold)
+
+From the repo root:
 
 ```bash
-docker-compose up --build -d
+./scripts/skaffold-dev.sh
 ```
+
+Use **`--cleanup=false`** (as the script does) so your Postgres PVC is not removed when you stop Skaffold. That also means **workloads keep running** after you Ctrl+C; use **`./scripts/skaffold-stop.sh`** (or `make skaffold-stop`) to scale **backend**, **frontend**, and **postgres** to zero while keeping the namespace and volumes. Use **`skaffold delete`** only when you want to tear down applied resources (including the PVC).
 
 ### Production Considerations
 

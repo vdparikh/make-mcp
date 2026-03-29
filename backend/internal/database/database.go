@@ -1109,10 +1109,17 @@ func (db *DB) LogToolExecution(ctx context.Context, exec *models.ToolExecution) 
 		source = "playground"
 	}
 
+	var toolIDArg interface{}
+	if tid := strings.TrimSpace(exec.ToolID); tid != "" {
+		toolIDArg = tid
+	} else {
+		toolIDArg = nil
+	}
+
 	_, err := db.pool.Exec(ctx,
 		`INSERT INTO tool_executions (id, tool_id, server_id, tool_name, source, client_user_id, client_agent, client_token, input, output, error, status_code, duration_ms, success, healing_applied, repair_suggestion, created_at) 
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-		exec.ID, exec.ToolID, exec.ServerID, nullIfEmpty(exec.ToolName), source,
+		exec.ID, toolIDArg, exec.ServerID, nullIfEmpty(exec.ToolName), source,
 		nullIfEmpty(exec.ClientUserID), nullIfEmpty(exec.ClientAgent), nullIfEmpty(exec.ClientToken),
 		exec.Input, exec.Output, exec.Error, exec.StatusCode, exec.DurationMs, exec.Success, exec.HealingApplied, nullIfEmpty(exec.RepairSuggestion), exec.CreatedAt)
 
@@ -1227,7 +1234,7 @@ func (db *DB) ListRuntimeExecutionsForUser(ctx context.Context, userID, serverID
 	if limit <= 0 {
 		limit = 200
 	}
-	query := `SELECT e.id, e.tool_id, e.server_id, COALESCE(e.tool_name, ''), COALESCE(e.source, 'playground'), COALESCE(e.client_user_id, ''), COALESCE(e.client_agent, ''), COALESCE(e.client_token, ''), e.input, e.output, e.error, e.status_code, e.duration_ms, e.success, e.healing_applied, COALESCE(e.repair_suggestion, ''), e.created_at
+	query := `SELECT e.id, COALESCE(e.tool_id::text, ''), e.server_id, COALESCE(e.tool_name, ''), COALESCE(e.source, 'playground'), COALESCE(e.client_user_id, ''), COALESCE(e.client_agent, ''), COALESCE(e.client_token, ''), e.input, e.output, e.error, e.status_code, e.duration_ms, e.success, e.healing_applied, COALESCE(e.repair_suggestion, ''), e.created_at
 		FROM tool_executions e
 		INNER JOIN servers s ON e.server_id = s.id
 		WHERE s.owner_id::text = $1 AND e.source = 'runtime'`
@@ -1277,7 +1284,7 @@ func (db *DB) ListRuntimeExecutionsByServer(ctx context.Context, serverID string
 		limit = 100
 	}
 	rows, err := db.pool.Query(ctx,
-		`SELECT id, tool_id, server_id, COALESCE(tool_name, ''), COALESCE(source, 'playground'), COALESCE(client_user_id, ''), COALESCE(client_agent, ''), COALESCE(client_token, ''), input, output, error, status_code, duration_ms, success, healing_applied, COALESCE(repair_suggestion, ''), created_at 
+		`SELECT id, COALESCE(tool_id::text, ''), server_id, COALESCE(tool_name, ''), COALESCE(source, 'playground'), COALESCE(client_user_id, ''), COALESCE(client_agent, ''), COALESCE(client_token, ''), input, output, error, status_code, duration_ms, success, healing_applied, COALESCE(repair_suggestion, ''), created_at 
 		 FROM tool_executions WHERE server_id = $1 AND source = 'runtime' ORDER BY created_at DESC LIMIT $2`, serverID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying runtime executions: %w", err)

@@ -1,0 +1,64 @@
+# Canonical non-secret app YAML for the backend in Kubernetes (edit here; sync ideas from config/config.example.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: make-mcp-config
+  namespace: make-mcp
+  labels:
+    app.kubernetes.io/name: make-mcp
+data:
+  app.config.yaml: |
+    server:
+      listen_host: "0.0.0.0"
+      listen_port: 8080
+      debug: true
+
+    cors:
+      allowed_origins:
+        - "http://localhost:3000"
+        - "http://127.0.0.1:3000"
+        - "http://make-mcp.localhost:3000"
+
+    webauthn:
+      # Passkeys: rp_id must match the hostname in the address bar. Use http://make-mcp.localhost:3000 and set
+      # WEBAUTHN_RP_ID=make-mcp.localhost on the backend, or keep http://localhost:3000 with rp_id localhost.
+      rp_id: "localhost"
+      rp_origins:
+        - "http://localhost:3000"
+        - "http://127.0.0.1:3000"
+        - "http://make-mcp.localhost:3000"
+
+    hosted:
+      # Kubernetes-hosted MCP runtimes (Pods + Services) instead of Docker on the node.
+      runtime: "kubernetes"
+      kubernetes:
+        namespace: "make-mcp"
+        node_generated_root: "/var/lib/make-mcp/generated-servers"
+      # Fallback when DialHost is unset; K8s runtime sets per-session Service DNS on ContainerConfig.
+      container_dial_host: "127.0.0.1"
+      container_bind_host: "0.0.0.0"
+      generated_server_public_host_ip: "127.0.0.1"
+      observability_docker_host_alias: "backend.make-mcp.svc.cluster.local"
+      observability_replace_api_hosts:
+        - "127.0.0.1"
+        - "::1"
+        - "localhost"
+
+    urls:
+      mcp_hosted_base_url: ""
+      # Hosted pods must call the API on port 8080, not the frontend (3000). Empty URL used to rewrite
+      # localhost:3000 -> backend DNS but kept the wrong port; set this explicitly for in-cluster ingest.
+      mcp_observability_ingest_base_url: "http://backend.make-mcp.svc.cluster.local:8080"
+
+    paths:
+      docs_dir: ""
+
+    llm:
+      default_provider: groq
+      providers:
+        groq:
+          type: openai_compatible
+          base_url: https://api.groq.com/openai/v1
+          model: llama-3.3-70b-versatile
+          api_key_env: GROQ_API_KEY
+          enabled: true

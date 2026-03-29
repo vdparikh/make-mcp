@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -64,7 +66,7 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
+	r.Use(abortAwareRecovery())
 
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   cfg.CORS.AllowedOrigins,
@@ -128,4 +130,22 @@ func main() {
 
 	<-quit
 	log.Println("Shutting down server...")
+}
+
+// abortAwareRecovery is like gin.Recovery but re-panics http.ErrAbortHandler.
+// net/http/httputil.ReverseProxy (hosted MCP) panics ErrAbortHandler when the
+// client disconnects or during SSE teardown; Gin's default recovery logs that as a bug.
+func abortAwareRecovery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if err := recover(); err != nil {
+				if err == http.ErrAbortHandler {
+					panic(err)
+				}
+				log.Printf("[Recovery] panic: %v\n%s", err, debug.Stack())
+				c.AbortWithStatus(http.StatusInternalServerError)
+			}
+		}()
+		c.Next()
+	}
 }

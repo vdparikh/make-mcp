@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -31,9 +28,11 @@ import (
 
 // ContainerConfig holds runtime info for a hosted MCP container.
 type ContainerConfig struct {
-	ContainerID        string
-	HostPort           string
-	Version            string
+	ContainerID string
+	HostPort    string
+	// DialHost overrides config hosted.container_dial_host when non-empty (e.g. Kubernetes Service DNS).
+	DialHost string
+	Version  string
 	StartedAt          time.Time
 	LastUsedAt         time.Time
 	IdleTimeoutMinutes int
@@ -215,7 +214,7 @@ func (m *Manager) EnsureContainer(ctx context.Context, userID string, serverID s
 	if effectiveIdleTimeout < 0 {
 		effectiveIdleTimeout = 0
 	}
-	if err := writeHostedManifest(rootDir, snapshot, version, userID, serverID, envVars, effectiveIdleTimeout, m.containerBindHost, rt); err != nil {
+	if err := writeHostedManifest(rootDir, snapshot, version, userID, serverID, envVars, effectiveIdleTimeout, m.containerBindHost, rt, "docker"); err != nil {
 		return nil, fmt.Errorf("write hosted manifest: %w", err)
 	}
 
@@ -321,7 +320,7 @@ func (m *Manager) startContainer(ctx context.Context, rootDir string, userID str
 		return nil, fmt.Errorf("container start: %w", err)
 	}
 
-	if err := m.waitForHostedHTTPReady(ctx, hostPort); err != nil {
+	if err := WaitForHostedHTTPReady(ctx, m.containerBindHost, hostPort); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		t := 10
@@ -338,48 +337,6 @@ func (m *Manager) startContainer(ctx context.Context, rootDir string, userID str
 		LastUsedAt:         time.Now(),
 		IdleTimeoutMinutes: idleTimeoutMinutes,
 	}, nil
-}
-
-// waitForHostedHTTPReady polls until the generated MCP HTTP server answers GET (JSON info).
-// Without this, the first client request often hits connection refused while npm install runs (502 from the reverse proxy).
-func (m *Manager) waitForHostedHTTPReady(ctx context.Context, hostPort string) error {
-	dialHost := strings.TrimSpace(m.containerBindHost)
-	if dialHost == "" {
-		return fmt.Errorf("container bind host is empty")
-	}
-	baseURL := "http://" + net.JoinHostPort(dialHost, hostPort)
-	deadline := time.Now().Add(hostedHTTPReadyTimeout)
-	client := &http.Client{Timeout: 5 * time.Second}
-	var lastErr error
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL, nil)
-		if err != nil {
-			return err
-		}
-		// Match generated server: Accept must prefer JSON-only to skip the SSE branch.
-		req.Header.Set("Accept", "application/json")
-		resp, err := client.Do(req)
-		if err == nil {
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-			lastErr = fmt.Errorf("HTTP %d from hosted runtime", resp.StatusCode)
-		} else {
-			lastErr = err
-		}
-		time.Sleep(hostedHTTPReadyPoll)
-	}
-	if lastErr != nil {
-		return fmt.Errorf("hosted runtime did not become ready on %s within %v: %v", baseURL, hostedHTTPReadyTimeout, lastErr)
-	}
-	return fmt.Errorf("hosted runtime did not become ready on %s within %v", baseURL, hostedHTTPReadyTimeout)
 }
 
 func (m *Manager) GetContainerForServer(ctx context.Context, userID string, serverID string) (*ContainerConfig, error) {
@@ -755,7 +712,7 @@ func writeGeneratedServer(rootDir string, gen *generator.GeneratedServer) error 
 	return nil
 }
 
-func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersion, userID, serverID string, envVars map[string]string, idleTimeoutMinutes int, bindHost string, rt *hostedruntime.Resolved) error {
+func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersion, userID, serverID string, envVars map[string]string, idleTimeoutMinutes int, bindHost string, rt *hostedruntime.Resolved, runtimeName string) error {
 	if snapshot == nil {
 		return fmt.Errorf("snapshot is required")
 	}
@@ -765,6 +722,9 @@ func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersio
 			return err
 		}
 		rt = def
+	}
+	if strings.TrimSpace(runtimeName) == "" {
+		runtimeName = "docker"
 	}
 	tools := make([]HostedManifestTool, 0, len(snapshot.Tools))
 	for _, t := range snapshot.Tools {
@@ -790,7 +750,7 @@ func writeHostedManifest(rootDir string, snapshot *models.Server, snapshotVersio
 		Name:          snapshot.Name,
 		Snapshot:      snapshotVersion,
 		ServerVersion: snapshot.Version,
-		Runtime:       "docker",
+		Runtime:       runtimeName,
 		Image:         hostedRuntimeImage,
 		Endpoint:      fmt.Sprintf("/api/users/%s/%s", userID, databaseSafeSlug(snapshot.Name)),
 		Tools:         tools,

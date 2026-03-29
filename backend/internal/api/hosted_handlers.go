@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -511,7 +512,8 @@ func (h *Handler) buildHostedStatusResponse(c *gin.Context, server *models.Serve
 	var memoryMB int64 = 512
 	var nanoCPUs int64 = 500_000_000
 	var pidsLimit int64 = 128
-	networkScope := fmt.Sprintf("%s:random-port -> 3000/tcp", strings.TrimSpace(h.cfg.Hosted.ContainerDialHost))
+	dial := hosted.DialHost(cfg, strings.TrimSpace(h.cfg.Hosted.ContainerDialHost))
+	networkScope := fmt.Sprintf("%s -> :3000", dial)
 	idleTimeoutMinutes := cfg.IdleTimeoutMinutes
 	if len(manifest) > 0 {
 		var m map[string]interface{}
@@ -863,6 +865,12 @@ type hostedResolvedTarget struct {
 	Snapshot   *models.Server
 }
 
+// Sentinel errors for hosted URL resolution (JSON hints in HostedMCPGet/Post).
+var (
+	errHostedRouteUnknownServer = errors.New("no server for this user_id and server_slug")
+	errHostedRouteNotPublished  = errors.New("server has not been published to hosted")
+)
+
 // resolveHostedTarget resolves user/slug to the latest hosted snapshot.
 func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, error) {
 	userID := c.Param("user_id")
@@ -876,7 +884,7 @@ func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, er
 		return nil, err
 	}
 	if server == nil {
-		return nil, nil
+		return nil, errHostedRouteUnknownServer
 	}
 
 	sv, err := h.db.GetLatestHostedServerVersion(c.Request.Context(), server.ID)
@@ -884,7 +892,7 @@ func (h *Handler) resolveHostedTarget(c *gin.Context) (*hostedResolvedTarget, er
 		return nil, err
 	}
 	if sv == nil {
-		return nil, nil
+		return nil, errHostedRouteNotPublished
 	}
 	var snap models.Server
 	if err := json.Unmarshal(sv.Snapshot, &snap); err != nil {
@@ -1087,7 +1095,7 @@ func (h *Handler) requireHostedAccessBoundary(c *gin.Context, server *models.Ser
 }
 
 func (h *Handler) proxyToHostedContainer(c *gin.Context, cfg *hosted.ContainerConfig) {
-	dialHost := strings.TrimSpace(h.cfg.Hosted.ContainerDialHost)
+	dialHost := hosted.DialHost(cfg, strings.TrimSpace(h.cfg.Hosted.ContainerDialHost))
 	target, err := url.Parse("http://" + net.JoinHostPort(dialHost, cfg.HostPort))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid container target"})
@@ -1149,11 +1157,26 @@ func (h *Handler) proxyToHostedContainer(c *gin.Context, cfg *hosted.ContainerCo
 func (h *Handler) HostedMCPGet(c *gin.Context) {
 	target, err := h.resolveHostedTarget(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		switch {
+		case errors.Is(err, errHostedRouteUnknownServer):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+				"hint":  "The user_id in the path must be the owning account's UUID (see Deploy / hosted MCP URL). The slug must match that user's server.",
+			})
+			return
+		case errors.Is(err, errHostedRouteNotPublished):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+				"hint":  "Publish this server from Deploy so a hosted snapshot exists. Until then, the hosted URL returns 404.",
+			})
+			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if target == nil || h.hostedMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not available"})
 		return
 	}
 	if !h.requireHostedAccessBoundary(c, target.Server) {
@@ -1180,11 +1203,26 @@ func (h *Handler) HostedMCPGet(c *gin.Context) {
 func (h *Handler) HostedMCPPost(c *gin.Context) {
 	target, err := h.resolveHostedTarget(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		switch {
+		case errors.Is(err, errHostedRouteUnknownServer):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+				"hint":  "The user_id in the path must be the owning account's UUID (see Deploy / hosted MCP URL). The slug must match that user's server.",
+			})
+			return
+		case errors.Is(err, errHostedRouteNotPublished):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+				"hint":  "Publish this server from Deploy so a hosted snapshot exists. Until then, the hosted URL returns 404.",
+			})
+			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if target == nil || h.hostedMgr == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "hosted server not available"})
 		return
 	}
 	if !h.requireHostedAccessBoundary(c, target.Server) {

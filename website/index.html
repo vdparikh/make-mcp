@@ -384,15 +384,15 @@
     <section class="get-started">
       <div class="container">
         <h2 class="section-title">Get started in minutes</h2>
-        <p class="section-lead">Run with Docker. Sign up with email and a passkey — no password.</p>
+        <p class="section-lead">Run on local Kubernetes with Skaffold. Sign up with email and a passkey — no password.</p>
         <div class="row justify-content-center">
           <div class="col-lg-8">
             <div class="code-block">
               <pre class="mb-0"><code>git clone https://github.com/vdparikh/make-mcp.git
 cd make-mcp
-docker-compose up --build</code></pre>
+./scripts/skaffold-dev.sh</code></pre>
             </div>
-            <p class="get-started-note mt-3">Open <strong>http://localhost:3000</strong>, register with your email, create a passkey, then create your first server or add the demo server to explore.</p>
+            <p class="get-started-note mt-3">Requires kubectl, a cluster, and Skaffold (see repo README). Open <strong>http://localhost:3000</strong>, register with your email, create a passkey, then create your first server or add the demo server to explore.</p>
             <div class="text-center mt-4">
               <a href="https://github.com/vdparikh/make-mcp#quick-start" class="btn btn-primary btn-lg px-4">Full setup guide</a>
             </div>

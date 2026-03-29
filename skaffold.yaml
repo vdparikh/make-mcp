@@ -1,0 +1,49 @@
+# Make MCP — local Kubernetes (e.g. Rancher Desktop) dev loop.
+#
+# IMPORTANT — Postgres persistence:
+# Default `skaffold dev` deletes deployed resources on exit (Ctrl+C), which removes the namespace and PVCs.
+# Use either:
+#   ./scripts/skaffold-dev.sh
+# or:
+#   skaffold dev --cleanup=false
+#
+# Exiting Skaffold stops the dev process and port-forward; it does NOT delete workloads (--cleanup=false).
+# To scale backend/frontend/postgres to 0 but keep PVCs: ./scripts/skaffold-stop.sh
+#
+# Postgres is a StatefulSet with a PVC (`data-postgres-0`). That survives pod restarts; keeping the namespace
+# (via --cleanup=false) avoids losing the claim between Skaffold sessions.
+#
+# Prerequisite: kubectl context points at your cluster; namespace is created by manifests.
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: make-mcp
+build:
+  local:
+    push: false
+  artifacts:
+    - image: make-mcp-backend
+      context: backend
+      docker:
+        dockerfile: Dockerfile
+    - image: make-mcp-frontend
+      context: frontend
+      docker:
+        dockerfile: Dockerfile
+manifests:
+  rawYaml:
+    - k8s/00-namespace.yaml
+    - k8s/01-secrets.yaml
+    - k8s/02-configmap.yaml
+    - k8s/03-postgres.yaml
+    - k8s/06-hosted-rbac.yaml
+    - k8s/04-backend.yaml
+    - k8s/05-frontend.yaml
+deploy:
+  kubectl: {}
+portForward:
+  - resourceType: service
+    resourceName: frontend
+    namespace: make-mcp
+    port: 3000
+    localPort: 3000

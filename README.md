@@ -39,23 +39,21 @@
 
 ## Quick Start
 
-### Prerequisites
+**Requirements for the supported path:** a **local Kubernetes** cluster (Docker Desktop, Rancher Desktop, kind, k3d, minikube, …), **`kubectl`** configured for it, **[Skaffold](https://skaffold.dev/)**, and **Docker** (or another builder Skaffold can use for images). The repo treats **Kubernetes + Skaffold** as the single documented way to run the full stack; there is no root-level Docker Compose anymore.
 
-- Go 1.22+
-- Node.js 20+
-- PostgreSQL 16+ (or Docker)
-
-### Using Docker Compose (Recommended)
+### Run with Kubernetes (recommended)
 
 ```bash
 git clone https://github.com/vdparikh/make-mcp.git
 cd make-mcp
-docker-compose up --build
+./scripts/skaffold-dev.sh
 ```
 
 Open http://localhost:3000. **Sign up** with your email and name, then create a **passkey** (no password). Use the same passkey to sign in next time.
 
-### Manual Setup
+Use **`./scripts/skaffold-dev.sh`** (or `skaffold dev --cleanup=false`) so Skaffold does **not** delete the `make-mcp` namespace on exit—plain `skaffold dev` tears down resources and **can wipe the Postgres PVC**. **Exiting Skaffold still leaves app pods running** (only the dev process stops); run **`./scripts/skaffold-stop.sh`** when you want those pods scaled down while keeping Postgres data. See **[CONFIGURATION.md](./CONFIGURATION.md)** for details, secrets, and Keycloak notes.
+
+### Manual Setup (Go + Postgres on the host)
 
 See **[CONFIGURATION.md](./CONFIGURATION.md)** for `config/config.yaml` and **`env.example.sh`** / **`env.sh`** (secrets).
 
